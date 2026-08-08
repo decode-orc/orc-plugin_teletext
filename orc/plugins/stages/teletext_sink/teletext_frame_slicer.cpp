@@ -1,7 +1,7 @@
 /*
  * File:        teletext_frame_slicer.cpp
  * Module:      orc-stage-plugin-teletext_sink
- * Purpose:     Per-frame WST teletext line recovery implementation
+ * Purpose:     Per-frame teletext line recovery implementation
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  * SPDX-FileCopyrightText: 2026 Simon Inns
@@ -31,8 +31,8 @@ TeletextSlicerOptions to_slicer_options(
 }
 
 // The slicer for entry |index| of kTeletextVideoSystems, from that system's
-// own profile — so the sample rate and the service are paired in one place
-// rather than asserted again here.
+// own profile — so the sample rate and the teletext system are paired in one
+// place rather than asserted again here.
 TeletextSlicer make_slicer(size_t index,
                            const TeletextFrameSlicerOptions& options) {
   const auto profile =
@@ -53,7 +53,6 @@ TeletextFrameSlicer::TeletextFrameSlicer(TeletextFrameSlicerOptions options)
 
 TeletextFrameSlicer::SystemProfile TeletextFrameSlicer::profile_for(
     VideoSystem system) {
-  // ITU-R BT.653 System B, on the television systems it is defined for.
   switch (system) {
     case VideoSystem::PAL:
       // 625 lines: ETSI EN 300 706.
@@ -66,8 +65,9 @@ TeletextFrameSlicer::SystemProfile TeletextFrameSlicer::profile_for(
                            static_cast<int16_t>(kPalWhite),
                            0};
     case VideoSystem::NTSC:
-      // 525 lines: Table 1b. NTSC and PAL_M share the line structure and
-      // therefore the service; only the 4FSC sample rate differs.
+      // 525 lines: ITU-R BT.653 Table 1b. NTSC and PAL_M share the line
+      // structure and therefore the service; only the 4FSC sample rate
+      // differs.
       return SystemProfile{true,
                            TeletextSystem::kWst525,
                            kTeletextFirstFieldLine525,
