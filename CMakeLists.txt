@@ -74,7 +74,11 @@ set(ORC_TELETEXT_SINK_SOURCES
     src/teletext_sink/teletext_page_catalogue.cpp
     src/teletext_sink/teletext_squash_stats.cpp
     src/teletext_sink/teletext_packet_spill.cpp
+    src/teletext_sink/teletext_unplaced_rows.cpp
+    src/teletext_sink/teletext_data_channels.cpp
+    src/teletext_sink/teletext_page_format_clear.cpp
     src/teletext_sink/teletext_catalogue_view.cpp
+    src/teletext_sink/teletext_data_export.cpp
 )
 
 set(ORC_NABTS_SINK_SOURCES
