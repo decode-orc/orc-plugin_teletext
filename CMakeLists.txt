@@ -89,16 +89,39 @@ set(ORC_NABTS_SINK_SOURCES
     src/nabts_sink/nabts_block_scanner.cpp
     src/nabts_sink/nabts_packet.cpp
     src/nabts_sink/nabts_data_group.cpp
+    src/nabts_sink/nabts_salvage.cpp
+    src/nabts_sink/nabts_datacast.cpp
+    src/nabts_sink/nabts_datacast_files.cpp
+    src/nabts_sink/nabts_decompress.cpp
+    src/nabts_sink/nabts_framed_containers.cpp
+    src/nabts_sink/nabts_framed_catalogue.cpp
+    src/nabts_sink/nabts_framed_service.cpp
+    src/nabts_sink/nabts_web_mirror.cpp
+    src/nabts_sink/nabts_network_messages.cpp
+    src/nabts_sink/nabts_data_export.cpp
+    src/nabts_sink/nabts_playlist.cpp
+    src/nabts_sink/gif_decoder.cpp
+    src/nabts_sink/nabts_service_census.cpp
     src/nabts_sink/nabts_record.cpp
     src/nabts_sink/nabts_record_catalogue.cpp
+    src/nabts_sink/nabts_navigation.cpp
+    src/nabts_sink/nabts_caption_stream.cpp
     src/nabts_sink/naplps_code_env.cpp
     src/nabts_sink/naplps_lint.cpp
     src/nabts_sink/naplps_lint_repair.cpp
     src/nabts_sink/naplps_pdi.cpp
     src/nabts_sink/naplps_state.cpp
+    src/nabts_sink/naplps_incremental.cpp
     src/nabts_sink/naplps_interpreter.cpp
     src/nabts_sink/naplps_raster.cpp
     src/nabts_sink/naplps_font.cpp
+    src/nabts_sink/naplps_palette_timeline.cpp
+    src/nabts_sink/naplps_receiver_pace.cpp
+    src/nabts_sink/naplps_listing.cpp
+    src/nabts_sink/naplps_proportional.cpp
+    src/nabts_sink/naplps_dialect_model.cpp
+    src/nabts_sink/naplps_reconstruct.cpp
+    src/nabts_sink/nabts_record_library.cpp
     src/nabts_sink/nabts_raster_view.cpp
     src/nabts_sink/nabts_catalogue_view.cpp
 )
