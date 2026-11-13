@@ -23,7 +23,6 @@
 #include <variant>
 #include <vector>
 
-#include "teletext_data_export.h"
 #include "teletext_frame_slicer.h"
 #include "teletext_sink_deps.h"
 #include "vbi-services/teletext_page_decoder.h"
@@ -162,24 +161,6 @@ std::vector<ArtifactPtr> TeletextSinkStage::execute(
         std::dynamic_pointer_cast<const VideoFrameRepresentation>(inputs[0]);
   }
   return {};
-}
-
-CatalogueExportResult TeletextSinkStage::export_data(
-    const std::string& directory) const {
-  std::lock_guard<std::mutex> lock(catalogue_mutex_);
-  CatalogueExportResult result;
-  if (!has_results_) {
-    return result;
-  }
-  result.supported = true;
-  VbiExportTally tally = teletext_export_data(
-      dataset_, report_, vbi_export_writer(stage_services_, directory));
-  result.files = tally.files;
-  result.failures = std::move(tally.failures);
-  result.summary = std::move(tally.summary);
-  ORC_LOG_INFO("TeletextSink: Exported {} file(s) to {}", result.files,
-               directory);
-  return result;
 }
 
 StagePreviewCapability TeletextSinkStage::get_preview_capability() const {

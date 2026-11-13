@@ -22,7 +22,6 @@
 #include <variant>
 #include <vector>
 
-#include "nabts_data_export.h"
 #include "nabts_frame_slicer.h"
 #include "nabts_sink_deps.h"
 #include "naplps_render_grid.h"
@@ -154,23 +153,6 @@ std::vector<ArtifactPtr> NabtsSinkStage::execute(
         std::dynamic_pointer_cast<const VideoFrameRepresentation>(inputs[0]);
   }
   return {};
-}
-
-CatalogueExportResult NabtsSinkStage::export_data(
-    const std::string& directory) const {
-  std::lock_guard<std::mutex> lock(catalogue_mutex_);
-  CatalogueExportResult result;
-  if (!has_results_) {
-    return result;
-  }
-  result.supported = true;
-  NabtsExportTally tally = nabts_export_data(
-      dataset_, report_, vbi_export_writer(stage_services_, directory));
-  result.files = tally.files;
-  result.failures = std::move(tally.failures);
-  result.summary = std::move(tally.summary);
-  ORC_LOG_INFO("NabtsSink: Exported {} file(s) to {}", result.files, directory);
-  return result;
 }
 
 StagePreviewCapability NabtsSinkStage::get_preview_capability() const {

@@ -140,14 +140,6 @@ class TeletextSinkStage : public DAGStage,
     return *catalogue_;
   }
 
-  // Everything the last trigger decoded, each kind of data as the files it
-  // is, under a folder the host names (teletext_export_data()): the pages as
-  // text, every version kept, the broadcast service data and the data lines'
-  // payloads. Under the catalogue's lock, so a trigger cannot replace the
-  // dataset part way through.
-  CatalogueExportResult export_data(
-      const std::string& directory) const override;
-
   // IStagePreviewCapability
   StagePreviewCapability get_preview_capability() const override;
 

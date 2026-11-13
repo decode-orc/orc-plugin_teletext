@@ -2182,61 +2182,51 @@ std::vector<const CatalogueDrawOp*> ops_at(const CatalogueDisplayList& list,
   return out;
 }
 
-// A page drawn at once comes out as one stage, exactly the runs of its final
-// surface, and says nothing about time.
-TEST(NaplpsRasterViewTest, APageDrawnAtOnceIsOneStage) {
-  NabtsPageSnapshot page;
-  page.primitives = {point_at(2, 3, 0), point_at(3, 3, 0)};
+// The SDK this builds against has no palette tracks, so an entry that settles
+// into a blink between two colours is drawn blinking between them, from its
+// still colour to the other one.
+TEST(NaplpsRasterViewTest, AnEntryBlinkingBetweenTwoColoursBlinks) {
+  const NabtsColour red{0, 7, 0};
+  const NabtsColour blue{0, 0, 7};
+  NaplpsPaletteTimeline palette;
+  NaplpsPaletteTrack& track = palette.tracks[3];
+  track.steps = {{0, red}, {500, blue}, {1000, red}};
+  track.loop_start_ms = 500;
+  track.loop_period_ms = 1000;
 
-  CatalogueDisplayList list;
-  naplps_emit_raster_page(page, kTestGrid, list);
-  ASSERT_EQ(list.ops.size(), 1u) << "two white cells side by side are one run";
-  EXPECT_EQ(list.ops[0].appear_ms, 0u);
-  EXPECT_FALSE(list.timed());
-  EXPECT_EQ(list.palette.size(), kNabtsColourMapEntries);
-  EXPECT_TRUE(list.palette_tracks.empty());
+  CatalogueDrawOp op;
+  op.colour = naplps_catalogue_colour(red, 3, palette);
+  naplps_catalogue_blink(op, 3, palette);
+  EXPECT_TRUE(op.blinking);
+  EXPECT_EQ(op.colour, naplps_catalogue_colour(red));
+  EXPECT_EQ(op.blink_to, naplps_catalogue_colour(blue));
+
+  CatalogueDrawOp other;
+  other.colour = naplps_catalogue_colour(blue, 3, palette);
+  naplps_catalogue_blink(other, 3, palette);
+  EXPECT_TRUE(other.blinking);
+  EXPECT_EQ(other.blink_to, naplps_catalogue_colour(red));
 }
 
-// §5.3.2.8 WAIT: what is drawn after a pause appears after it, and drawing
-// every operation in order still gives the finished page.
-TEST(NaplpsRasterViewTest, AStagedPageEmitsEachStageWhenItIsDrawn) {
-  NabtsPageSnapshot page;
-  page.primitives = {point_at(2, 3, 0), point_at(8, 3, 500),
-                     point_at(2, 3, 900, NabtsColour{0, 15, 0, false})};
+// Anything else an entry does over the presentation is not shown: a change
+// that does not loop, a cycle through three colours, or a pixel that names no
+// entry keeps its still colour.
+TEST(NaplpsRasterViewTest, OtherPaletteChangesKeepTheStillColour) {
+  const NabtsColour red{0, 7, 0};
+  const NabtsColour green{7, 0, 0};
+  const NabtsColour blue{0, 0, 7};
+  NaplpsPaletteTimeline palette;
+  palette.tracks[1].steps = {{0, red}, {500, blue}};
+  palette.tracks[2].steps = {{0, red}, {100, green}, {200, blue}};
+  palette.tracks[2].loop_period_ms = 300;
 
-  CatalogueDisplayList list;
-  naplps_emit_raster_page(page, kTestGrid, list);
-  EXPECT_TRUE(list.timed());
-  const auto first = ops_at(list, 2, 3);
-  ASSERT_EQ(first.size(), 2u);
-  EXPECT_EQ(first[0]->appear_ms, 0u);
-  EXPECT_EQ(first[1]->appear_ms, 900u);
-  EXPECT_EQ(first[1]->colour.red, 255) << "the later stage drew over it";
-  const auto second = ops_at(list, 8, 3);
-  ASSERT_EQ(second.size(), 1u);
-  EXPECT_EQ(second[0]->appear_ms, 500u);
-}
-
-// A clear part way through is a black display area at the moment it happened,
-// under whatever is drawn after it.
-TEST(NaplpsRasterViewTest, AClearIsEmittedWhenItHappened) {
-  NabtsPageSnapshot page;
-  page.timeline.superseded = {point_at(2, 3, 0)};
-  page.timeline.clears = {NabtsDisplayClear{1000, 1}};
-  page.primitives = {point_at(8, 3, 1500)};
-
-  CatalogueDisplayList list;
-  naplps_emit_raster_page(page, kTestGrid, list);
-  const auto cleared = ops_at(list, 2, 3);
-  ASSERT_EQ(cleared.size(), 2u);
-  EXPECT_EQ(cleared[0]->appear_ms, 0u);
-  EXPECT_EQ(cleared[1]->appear_ms, 1000u);
-  EXPECT_EQ(cleared[1]->colour.red, 0);
-  EXPECT_EQ(cleared[1]->colour.green, 0);
-  EXPECT_EQ(cleared[1]->colour.blue, 0);
-  const auto later = ops_at(list, 8, 3);
-  ASSERT_EQ(later.size(), 2u) << "the clear and the point drawn after it";
-  EXPECT_EQ(later[1]->appear_ms, 1500u);
+  for (const int16_t entry : {int16_t{1}, int16_t{2}, int16_t{-1}}) {
+    CatalogueDrawOp op;
+    op.colour = naplps_catalogue_colour(blue, entry, palette);
+    naplps_catalogue_blink(op, entry, palette);
+    EXPECT_FALSE(op.blinking) << entry;
+    EXPECT_EQ(op.colour, naplps_catalogue_colour(blue)) << entry;
+  }
 }
 
 // Drawn and cleared within one instant, a figure was never on screen, and a
@@ -2251,41 +2241,6 @@ TEST(NaplpsRasterViewTest, WhatAClearRemovesAtOnceIsNeverEmitted) {
   naplps_emit_raster_page(page, kTestGrid, list);
   EXPECT_TRUE(ops_at(list, 2, 3).empty());
   ASSERT_EQ(list.ops.size(), 1u);
-}
-
-// A run names its colour map entry only where the entry changes as the page is
-// shown, which is what a renderer follows; one that holds still is its colour.
-TEST(NaplpsRasterViewTest, OnlyAChangingEntryIsNamed) {
-  NabtsPageSnapshot page;
-  nabts_default_colour_map(page.colour_map);
-  nabts_default_colour_map(page.timeline.initial_map);
-  NabtsPrimitive steady = point_at(2, 3, 0, page.colour_map[5]);
-  steady.colour_map_address = 5;
-  NabtsPrimitive blinking = point_at(8, 3, 0, page.colour_map[3]);
-  blinking.colour_map_address = 3;
-  page.primitives = {steady, blinking};
-  NabtsBlinkProcess process;
-  process.from = 3;
-  process.to_address = 0;
-  process.on_ms = 400;
-  process.off_ms = 600;
-  page.timeline.blinks.push_back(process);
-  NabtsPaletteEvent start;
-  start.kind = NabtsPaletteEvent::Kind::kBlinkStart;
-  page.timeline.events.push_back(start);
-
-  CatalogueDisplayList list;
-  naplps_emit_raster_page(page, kTestGrid, list);
-  ASSERT_EQ(list.palette_tracks.size(), kNabtsColourMapEntries);
-  EXPECT_FALSE(list.palette_tracks[3].steps.empty());
-  EXPECT_TRUE(list.palette_tracks[5].steps.empty());
-  const auto steady_ops = ops_at(list, 2, 3);
-  const auto blinking_ops = ops_at(list, 8, 3);
-  ASSERT_EQ(steady_ops.size(), 1u);
-  ASSERT_EQ(blinking_ops.size(), 1u);
-  EXPECT_EQ(steady_ops[0]->colour.palette_index, -1);
-  EXPECT_EQ(blinking_ops[0]->colour.palette_index, 3);
-  EXPECT_TRUE(list.timed());
 }
 
 // X3.110 §5.3.3.5.1: "There is implicit closure between the start point and the

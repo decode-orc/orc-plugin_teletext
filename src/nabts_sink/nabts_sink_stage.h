@@ -182,38 +182,6 @@ class NabtsSinkStage : public DAGStage,
                          active(kNabtsTu2000xPaceToggleId));
   }
 
-  // A page that links keys to its macros, played: presented as the catalogue
-  // presents it under the reader's options, then each key pressed on it since
-  // it was shown. Replayed from the recovered records every time, so the same
-  // keys always give the same page and nothing is held between calls.
-  CataloguePayload played(
-      const std::string& item_id, const std::vector<std::string>& keys,
-      const std::string& view_option,
-      const std::vector<std::string>& active_toggles) const override {
-    const auto active = [&](const char* id) {
-      return std::find(active_toggles.begin(), active_toggles.end(),
-                       std::string(id)) != active_toggles.end();
-    };
-    // The lock the catalogue is built under, so the dataset is not replaced by
-    // a trigger while a page of it is being played.
-    std::lock_guard<std::mutex> lock(catalogue_mutex_);
-    return build_nabts_played_payload(
-        dataset_, item_id, keys,
-        naplps_render_mode_from_name(view_option, kDefaultRenderMode),
-        active(kNabtsRepairToggleId), active(kNabtsReconstructToggleId),
-        active(kNabtsReceiverPaceToggleId), active(kNabtsTu2000xPaceToggleId));
-  }
-
-  // Everything the last trigger decoded, each kind of data as the files it
-  // is, under a folder the host names (nabts_export_data()): the records as
-  // sent, the captions as subtitles, the datacasts and the files they
-  // carried, the network services' items. What a run's own exports write
-  // beside its packet stream, laid out for a reader rather than for the
-  // stream's name. Under the catalogue's lock, so a trigger cannot replace
-  // the dataset part way through.
-  CatalogueExportResult export_data(
-      const std::string& directory) const override;
-
   // IStagePreviewCapability
   StagePreviewCapability get_preview_capability() const override;
 

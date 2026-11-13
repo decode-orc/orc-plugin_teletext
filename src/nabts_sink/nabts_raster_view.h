@@ -30,25 +30,29 @@ CatalogueColour naplps_catalogue_colour(const NabtsColour& colour);
 /**
  * @brief One colour as a display list carries it
  *
- * The value is the still colour — the entry's contents in the final map,
- * blinks at rest — and where the entry the pixel stores (@p map_address)
- * changes as the page is shown, the entry is named too, so a renderer
- * playing the page follows it. An entry that holds still is left unnamed:
- * the value says all there is to say, and runs of one colour from two entries
- * that never change can then be drawn as one.
+ * The still colour: the entry's contents in the final map, blinks at rest.
+ * The SDK this builds against has no way to name an entry that changes as
+ * the page is shown, so @p map_address and @p palette are not consulted;
+ * naplps_catalogue_blink() gives a blink back where it can.
  */
 CatalogueColour naplps_catalogue_colour(const NabtsColour& colour,
                                         int16_t map_address,
                                         const NaplpsPaletteTimeline& palette);
 
 /**
- * @brief Set @p list's palette: the final map, and how its entries change
+ * @brief Mark @p op as blinking where its entry ends up blinking
  *
- * The tracks are left empty for a page whose colours hold still, which is
- * what tells a renderer there is nothing to play.
+ * Where the entry the pixel stores (@p map_address) settles into a loop
+ * between exactly two colours, @p op blinks between its own colour and the
+ * other one (CatalogueDrawOp::blinking, blink_to). Any other change over the
+ * presentation — timed steps, or a cycle through three or more colours — is
+ * not shown: the operation keeps its still colour.
  */
+void naplps_catalogue_blink(CatalogueDrawOp& op, int16_t map_address,
+                            const NaplpsPaletteTimeline& palette);
+
+/// Set @p list's palette: the final colour map.
 void naplps_emit_palette(const NabtsPageSnapshot& snapshot,
-                         const NaplpsPaletteTimeline& palette,
                          CatalogueDisplayList& list);
 
 /**
@@ -82,18 +86,6 @@ std::vector<NaplpsPaintStep> naplps_paint_stream(
  */
 bool naplps_fill_rows(const NabtsPrimitive& primitive, double& low,
                       double& high);
-
-/**
- * @brief Have @p op appear the way a receiver drew a fill or a clear: a row at
- *        a time, over the @p draw_ms before its appear time
- *
- * The sweep runs between unit y @p low and @p high, down from the top or up
- * from the bottom as @p sweep says (CatalogueDrawOp::reveal_duration_ms).
- * Nothing is set where @p draw_ms is 0 or the rows are none, so a page played
- * without a receiver's pace keeps every operation appearing whole.
- */
-void naplps_reveal_op(CatalogueDrawOp& op, uint32_t draw_ms, double low,
-                      double high, NabtsFillSweep sweep);
 
 class NaplpsRasteriser;
 
@@ -136,13 +128,9 @@ void naplps_deposit_primitive(const NabtsPrimitive& primitive,
  * is a shape every existing renderer of a display list already draws — the
  * pixel modes need no new operation kind.
  *
- * A page drawn over time (X3.110 §5.3.2.8 WAIT) is emitted stage by stage: the
- * first stage exactly as a page drawn at once would be, and each later one as
- * the runs of pixels it changed, stamped with the moment it was drawn — or,
- * where the stage cleared the display, a clear followed by everything then on
- * screen. Drawing every operation in order therefore still gives the final
- * page, and drawing those up to a time gives the page as it stood then. The
- * palette and its tracks come with it (naplps_emit_palette()).
+ * A page drawn over time (X3.110 §5.3.2.8 WAIT) is emitted as the record
+ * leaves the display: the SDK this builds against draws a display list whole,
+ * not over time. The final colour map comes with it (naplps_emit_palette()).
  *
  * @p list keeps whatever aspect and nominal grid the caller has already set;
  * the palette is set and the operations are appended.
