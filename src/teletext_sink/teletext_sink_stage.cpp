@@ -642,10 +642,7 @@ bool TeletextSinkStage::trigger(
   trigger_status_ = "Starting teletext analysis...";
   is_processing_.store(true);
   cancel_requested_.store(false);
-  has_results_ = false;
-  dataset_ = TeletextAnalysisDataset{};
-  report_.clear();
-  invalidate_catalogue();
+  publish_results(TeletextAnalysisDataset{}, std::string(), false);
 
   const auto fail_trigger = [this](const std::string& status) {
     trigger_status_ = status;
@@ -686,10 +683,7 @@ bool TeletextSinkStage::trigger(
     // The catalogue is kept whether or not the run finished: a cancelled run
     // still recovered the pages it got to, and the viewer is the reason the
     // user triggered it.
-    dataset_ = result.dataset;
-    report_ = result.report;
-    has_results_ = result.success;
-    invalidate_catalogue();
+    publish_results(result.dataset, result.report, result.success);
 
     // Diagnostic report of the run: recovery profile plus what combining
     // repeated rows changed. Reported for a run that was cancelled part-way as

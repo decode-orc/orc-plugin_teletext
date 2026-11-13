@@ -565,10 +565,8 @@ bool NabtsSinkStage::trigger(
     // catalogued no records: an empty catalogue is an answer — its summary says
     // what the recording carried instead — where "no results" tells the reader
     // the stage never ran.
-    dataset_ = result.dataset;
-    report_ = result.report;
-    has_results_ = result.success || !dataset_.records.empty();
-    invalidate_catalogue();
+    publish_results(result.dataset, result.report,
+                    result.success || !result.dataset.records.empty());
 
     // Diagnostic report of the run. Reported for a run that was cancelled
     // part-way as well as one that finished — how it was going is exactly the

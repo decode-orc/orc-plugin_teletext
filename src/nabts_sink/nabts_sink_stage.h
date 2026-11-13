@@ -140,7 +140,7 @@ class NabtsSinkStage : public DAGStage,
   void cancel_trigger() override { cancel_requested_.store(true); }
 
   /// Whether the last trigger left a catalogue behind
-  bool has_results() const override { return has_results_; }
+  bool has_results() const override { return has_results_.load(); }
 
   /// The raw catalogue the last trigger built. Plugin-private: the host reads
   /// the stage through ICatalogueResults and never sees this type. Kept public
@@ -234,10 +234,16 @@ class NabtsSinkStage : public DAGStage,
     return *catalogue_;
   }
 
-  /// Drop the cached catalogue so the next reader rebuilds it from the dataset
-  /// that has just replaced the one it was built from.
-  void invalidate_catalogue() {
+  /// Replace the last trigger's results and drop the catalogue built from the
+  /// ones before, under the lock catalogue() reads them under, so a reader on
+  /// the host's render worker never sees a dataset part way through being
+  /// replaced, nor a catalogue of the old one beside the new.
+  void publish_results(NabtsAnalysisDataset dataset, std::string report,
+                       bool has_results) {
     std::lock_guard<std::mutex> lock(catalogue_mutex_);
+    dataset_ = std::move(dataset);
+    report_ = std::move(report);
+    has_results_.store(has_results);
     catalogue_.reset();
   }
 
@@ -258,7 +264,7 @@ class NabtsSinkStage : public DAGStage,
   // Cached results of the last trigger, resolved into the host-facing
   // catalogue on demand.
   NabtsAnalysisDataset dataset_;
-  bool has_results_{false};
+  std::atomic<bool> has_results_{false};
   // The last trigger's report, which an export writes beside the data.
   std::string report_;
   // Built from dataset_ on first catalogue() call; cleared with it.
