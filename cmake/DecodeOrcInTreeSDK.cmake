@@ -53,6 +53,13 @@ target_compile_definitions(orc-sdk-support PRIVATE
     $<$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
 )
 target_link_libraries(orc-sdk-support PUBLIC spdlog::spdlog fmt::fmt)
+# decode-orc compiles everything with these on Windows, and the SDK headers
+# rely on them: NOMINMAX keeps windows.h's min()/max() macros from breaking
+# std::min/std::max and std::numeric_limits<T>::max(), and _USE_MATH_DEFINES
+# exposes M_PI. PUBLIC, so the plugin and its tests get them too.
+if(WIN32)
+    target_compile_definitions(orc-sdk-support PUBLIC NOMINMAX _USE_MATH_DEFINES)
+endif()
 
 add_library(orc-plugin-sdk INTERFACE)
 target_include_directories(orc-plugin-sdk INTERFACE "${_orc_sdk_root}/include")
