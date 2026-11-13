@@ -548,7 +548,7 @@ TEST_F(TeletextSinkDeps, Analyse_SquashingRepairsA525RowExtension) {
 // offsets, the frame bytes around it left as they were.
 TEST_F(TeletextSinkDeps, Analyse_ReadsVirTextScreensAsVersionsOfThePage) {
   const auto params = make_ntsc_params();
-  constexpr uint8_t kFrame = 0x55;
+  static constexpr uint8_t kFrame = 0x55;
   const auto virtext = [](int page_number, int row, const std::string& text) {
     std::array<uint8_t, orc::kTeletextPacketBytes> packet{};
     if (row == 0) {
