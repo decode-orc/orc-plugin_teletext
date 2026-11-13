@@ -18,7 +18,9 @@ jobs:
       # Host SDK the plugin is built against. Tracks `main` (host ABI 20).
       # Pin to a branch or tag only for a deliberate, temporary reason, and
       # restore `main` once it merges.
-      ORC_SDK_REF: main
+      # issue-377 until it merges: the functional goldens are recorded
+      # against its VBI Source stage (decode-orc#328's, cherry-picked there).
+      ORC_SDK_REF: issue-377
     strategy:
       fail-fast: false
       matrix:

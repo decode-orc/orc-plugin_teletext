@@ -228,9 +228,10 @@ binary:
     per-platform manifest fragments, then publishes the artifacts and
     `orc-plugin-manifest.yaml` to GitHub Release assets.
 - `ORC_SDK_REF` in the workflow selects the decode-orc checkout the SDK comes
-  from. It tracks `main` (host ABI 20); pin it to a branch or tag only for a
-  deliberate, temporary reason, and return it to `main` once that branch
-  merges.
+  from. It normally tracks `main` (host ABI 20); pin it to a branch or tag only
+  for a deliberate, temporary reason, and return it to `main` once that branch
+  merges. It is on `issue-377` now: the functional goldens are recorded
+  against that branch's VBI Source stage.
 
 ## Tagging a Release
 

@@ -197,9 +197,10 @@ class FrameWindow final : public Artifact, public VideoFrameRepresentation {
 // The captures are read through decode-orc's VBI Source stage, built from the
 // decode-orc checkout the SDK comes from (tests/functional/CMakeLists.txt), so
 // the 625-line reference also depends on that stage. These are from decode-orc
-// main at db1b9264. PR #328's VBI source commit, once it lands there, moves the
-// 625-line stream to bd32b2d4942ed096c244029467b9216f9a07badd636f7bfd0d622810a1ba35b6
-// (196518 bytes, 4679 packets) and leaves the 525-line one as it is.
+// issue-377, which carries #328's VBI source commit (36cbf8e8); decode-orc
+// main before it (db1b9264) gives the 625-line window
+// e80329b7da4771f8a833656ff003b7637a476c5c846e3c9c1bb251fa57de5510 (196686
+// bytes, 4683 packets) and the same 525-line stream.
 struct StreamGolden {
   const char* sha256;
   uint64_t bytes;
@@ -212,8 +213,8 @@ constexpr FrameID kPalFirstFrame = 2000;
 constexpr uint64_t kPalFrameCount = 200;
 
 constexpr StreamGolden kPalGolden{
-    "e80329b7da4771f8a833656ff003b7637a476c5c846e3c9c1bb251fa57de5510", 196686,
-    4683};
+    "bd32b2d4942ed096c244029467b9216f9a07badd636f7bfd0d622810a1ba35b6", 196518,
+    4679};
 
 // Pages this window of the capture carries, in the magazine + two hex digits a
 // viewer shows. A sample of the catalogue rather than all of it: the window
