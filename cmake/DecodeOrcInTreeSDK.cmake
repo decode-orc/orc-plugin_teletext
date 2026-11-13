@@ -25,6 +25,10 @@ if(NOT DEFINED ORC_INTREE_SDK_DIR)
     message(FATAL_ERROR "DecodeOrcInTreeSDK.cmake needs ORC_INTREE_SDK_DIR")
 endif()
 
+# A Windows path given on the command line keeps its backslashes, and the
+# CONFIGURE_DEPENDS glob below writes it verbatim into VerifyGlobs.cmake,
+# where "\a" in "D:\a\..." is read as an escape and the build stops.
+file(TO_CMAKE_PATH "${ORC_INTREE_SDK_DIR}" ORC_INTREE_SDK_DIR)
 set(_orc_sdk_root "${ORC_INTREE_SDK_DIR}/orc/sdk")
 if(NOT EXISTS "${_orc_sdk_root}/include/orc/abi/orc_plugin_abi.h")
     message(FATAL_ERROR
