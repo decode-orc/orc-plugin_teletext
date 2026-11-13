@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdint>
 
 namespace orc {
@@ -33,39 +34,67 @@ struct MapEntry {
   uint8_t blue;
 };
 
-// Table II-3 tabulates the map at three bits a gun. The map here holds four
-// (nabts_page.h), and the same algorithm of §5.3.2.5.2 gives each of the
-// table's entries scaled to fifteen and rounded — the greys uniformly spaced
-// from 0 to 15, the hues with one gun at 15.
+// The table as T.101 prints it: three bits a gun.
 constexpr MapEntry kTableII3[kNabtsColourMapEntries] = {
     // The uniform grey ramp of the low half, G = R = B.
-    {0, 0, 0},     // 0  nominal black
-    {2, 2, 2},     // 1
-    {4, 4, 4},     // 2
-    {6, 6, 6},     // 3  grey
-    {9, 9, 9},     // 4
-    {11, 11, 11},  // 5
-    {13, 13, 13},  // 6
-    {15, 15, 15},  // 7  nominal white
+    {0, 0, 0},  // 0  nominal black
+    {1, 1, 1},  // 1
+    {2, 2, 2},  // 2
+    {3, 3, 3},  // 3  grey
+    {4, 4, 4},  // 4
+    {5, 5, 5},  // 5
+    {6, 6, 6},  // 6
+    {7, 7, 7},  // 7  nominal white
     // Eight hues equally spaced around the hue circle, starting at blue.
-    {0, 0, 15},   // 8   0 degrees — blue
-    {0, 11, 15},  // 9   45
-    {0, 15, 8},   // 10  90
-    {4, 15, 0},   // 11  135
-    {15, 15, 0},  // 12  180 — yellow
-    {15, 4, 0},   // 13  225
-    {15, 0, 8},   // 14  270
-    {11, 0, 15},  // 15  315
+    {0, 0, 7},  // 8   0 degrees — blue
+    {0, 5, 7},  // 9   45
+    {0, 7, 4},  // 10  90
+    {2, 7, 0},  // 11  135
+    {7, 7, 0},  // 12  180 — yellow
+    {7, 2, 0},  // 13  225
+    {7, 0, 4},  // 14  270
+    {5, 0, 7},  // 15  315
 };
 
+constexpr int kTableGunMax = 7;
+
+// The map holds four bits a gun (nabts_page.h), where the table prints three.
+// Brought down to three bits it is the table, entry for entry. Of the four bits:
+// a gun the table has off or full is off or full; the grey ramp is the table's
+// ramp spaced uniformly over fifteen; and a hue's partial gun, which the
+// algorithm of §5.3.2.5.2 computes afresh at four bits rather than scaling the
+// table (90 degrees puts blue at 3.5 of 7, printed 4, and 7.5 of 15, held as
+// 8), is within a step of the table's value scaled.
 TEST(NabtsDefaultColourMap, MatchesTableII3AtFourBitsAGun) {
   NabtsColour map[kNabtsColourMapEntries];
   nabts_default_colour_map(map);
 
+  const auto to_three_bits = [](uint8_t gun) {
+    return static_cast<int>(std::lround(static_cast<double>(gun) *
+                                        kTableGunMax / kNabtsGunMax));
+  };
+  const auto scaled = [](uint8_t gun) {
+    return static_cast<double>(gun) * kNabtsGunMax / kTableGunMax;
+  };
   for (size_t i = 0; i < kNabtsColourMapEntries; ++i) {
-    EXPECT_EQ(map[i].green, kTableII3[i].green) << "entry " << i << " green";
-    EXPECT_EQ(map[i].red, kTableII3[i].red) << "entry " << i << " red";
-    EXPECT_EQ(map[i].blue, kTableII3[i].blue) << "entry " << i << " blue";
+    const uint8_t held[3] = {map[i].green, map[i].red, map[i].blue};
+    const uint8_t table[3] = {kTableII3[i].green, kTableII3[i].red,
+                              kTableII3[i].blue};
+    const char* const gun_name[3] = {"green", "red", "blue"};
+    for (int g = 0; g < 3; ++g) {
+      EXPECT_EQ(to_three_bits(held[g]), table[g])
+          << "entry " << i << " " << gun_name[g];
+      if (table[g] == 0 || table[g] == kTableGunMax) {
+        EXPECT_EQ(held[g], table[g] == 0 ? 0 : kNabtsGunMax)
+            << "entry " << i << " " << gun_name[g];
+      } else if (i < kNabtsColourMapEntries / 2) {
+        EXPECT_EQ(held[g], std::lround(scaled(table[g])))
+            << "entry " << i << " " << gun_name[g];
+      } else {
+        EXPECT_LE(std::fabs(held[g] - scaled(table[g])), 1.0)
+            << "entry " << i << " " << gun_name[g];
+      }
+    }
     EXPECT_FALSE(map[i].transparent) << "entry " << i;
   }
 }
