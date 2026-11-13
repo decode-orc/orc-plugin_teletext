@@ -148,6 +148,21 @@ TEST(NabtsFramedContainers, UnpacksAFileContainer) {
   EXPECT_EQ(content->last_channel, 0x01F);
 }
 
+// A caller holding a budget unpacks no more than is left of it: the
+// container's file comes back cut short at the limit, however far it would
+// have inflated.
+TEST(NabtsFramedContainers, UnpacksNoMoreThanTheLimit) {
+  const auto file =
+      carried(file_container("http://example.invalid/pages\\notes.txt", kZlib));
+  const auto whole = orc::nabts_framed_container_content(file);
+  ASSERT_TRUE(whole.has_value());
+  ASSERT_GT(whole->data.size(), 10u);
+  const auto limited = orc::nabts_framed_container_content(file, 10);
+  ASSERT_TRUE(limited.has_value());
+  EXPECT_LE(limited->data.size(), 10u);
+  EXPECT_TRUE(limited->cut_short || !limited->checksum_holds.value_or(false));
+}
+
 TEST(NabtsFramedContainers, UnpacksAnArchiveContainer) {
   const auto file = carried(
       archive_container("cache\\site", "aia.txt", kImploded, kImplodedCrc));

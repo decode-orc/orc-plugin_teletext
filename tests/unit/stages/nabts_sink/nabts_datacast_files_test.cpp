@@ -19,8 +19,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -155,12 +157,15 @@ void to_row(std::vector<uint8_t>& stream) {
 /// One copy of file |name| on the carousel: its directory entry, then its
 /// data in blocks of 392 bytes, each in a bundle of 16 rows.
 void put_file(std::vector<uint8_t>& stream, const std::string& name,
-              const std::vector<uint8_t>& data, uint32_t checksum = 0x3412) {
+              const std::vector<uint8_t>& data, uint32_t checksum = 0x3412,
+              std::optional<uint32_t> entry_length = std::nullopt) {
   const std::string entry =
       "\\ACS\\CURRENT\\     " + name + "2003-05-1906:27:10";
   stream.insert(stream.end(), entry.begin(), entry.end());
+  const uint32_t length =
+      entry_length.value_or(static_cast<uint32_t>(data.size()));
   for (int i = 0; i < 4; ++i) {
-    stream.push_back(static_cast<uint8_t>((data.size() >> (8 * i)) & 0xFF));
+    stream.push_back(static_cast<uint8_t>((length >> (8 * i)) & 0xFF));
   }
   // The sum of the file's bytes as read, then the entry's closing bytes.
   for (int i = 0; i < 4; ++i) {
@@ -235,6 +240,30 @@ TEST(NabtsDatacastFiles, MarksWhatNoCopyOfACarouselFileDelivered) {
   EXPECT_EQ(file.bytes_lost(), 25u);
   EXPECT_EQ(file.data_present[3 * 25 - 6], 0u);
   EXPECT_NE(file.data_present[0], 0u);
+}
+
+// A directory entry whose length was misread far larger than the file gets
+// its blocks' places only as copies of them are found, and the rest of what it
+// claims is marked lost rather than held empty: the file is the block that
+// arrived and four megabytes no copy delivered.
+TEST(NabtsDatacastFiles, AMisreadLengthHoldsOnlyTheBlocksThatArrived) {
+  constexpr uint32_t kClaimed = 4u << 20;
+  const std::vector<uint8_t> data = binary_data(500);
+  std::vector<uint8_t> stream;
+  put_file(stream, "TEST0004.BIN", data, 0x3412, kClaimed);
+  const auto files = orc::nabts_datacast_files(carousel_of(stream));
+  ASSERT_EQ(files.size(), 1u);
+  const orc::NabtsCarriedFile& file = files[0];
+  ASSERT_EQ(file.data.size(), kClaimed);
+  ASSERT_EQ(file.data_present.size(), kClaimed);
+  // Block 1 is a whole block of either length; block 2's header gives the
+  // 108 bytes a 500-byte file ends with, not the 392 of the length claimed.
+  EXPECT_EQ(file.bytes_lost(), kClaimed - orc::kNabtsCarouselBlockData);
+  EXPECT_NE(file.data_present[orc::kNabtsCarouselBlockData - 1], 0u);
+  EXPECT_EQ(file.data_present[orc::kNabtsCarouselBlockData], 0u);
+  EXPECT_TRUE(std::equal(data.begin(),
+                         data.begin() + orc::kNabtsCarouselBlockData,
+                         file.data.begin()));
 }
 
 // The opening of a text file as a recording sent it: the fixed header every

@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <optional>
 
+#include "nabts_datacast_files.h"
 #include "vbi-services/vbi_analysis_results.h"
 
 namespace orc {
@@ -82,10 +83,11 @@ bool nabts_framed_container(const NabtsCarriedFile& file);
  * container broken off — where its bytes went missing, or arrived wrong —
  * gives its file as far as it unpacked, NabtsCarriedFile::cut_short.
  *
- * Pure: no I/O. Bounded by kNabtsCarriedBytesMax.
+ * Pure: no I/O. Unpacks no more than |limit| bytes, so a caller holding a
+ * budget passes what is left of it (NabtsFramedService passes its own).
  */
 std::optional<NabtsCarriedFile> nabts_framed_container_content(
-    const NabtsCarriedFile& file);
+    const NabtsCarriedFile& file, size_t limit = kNabtsCarriedBytesMax);
 
 // The most bytes of a container's opening that may have been lost for
 // nabts_framed_container_reopened() to put them back: an archive's magic, the
@@ -107,10 +109,10 @@ constexpr size_t kNabtsContainerOpeningLost = 13;
  * openings that give the same file being one answer. Nothing otherwise,
  * where the file is no archive, or more was lost.
  *
- * Pure: no I/O.
+ * Pure: no I/O. Unpacks no more than |limit| bytes for any one opening.
  */
 std::optional<NabtsCarriedFile> nabts_framed_container_reopened(
-    const NabtsCarriedFile& file);
+    const NabtsCarriedFile& file, size_t limit = kNabtsCarriedBytesMax);
 
 }  // namespace orc
 

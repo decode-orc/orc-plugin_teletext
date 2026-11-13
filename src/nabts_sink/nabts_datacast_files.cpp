@@ -468,6 +468,12 @@ void read_copy(const CarouselStream& stream, size_t entry_end,
     if (from + want > stream.bytes.size()) {
       break;
     }
+    // A block's place is made when a copy of it is found, not when the
+    // directory entry is: a misread length would otherwise allocate a
+    // block for every 392 bytes it claims before anything arrived.
+    if (file.blocks.size() < b) {
+      file.blocks.resize(b);
+    }
     auto& copies = file.blocks[b - 1];
     if (copies.size() >= kNabtsCarouselMaxCopies) {
       continue;
@@ -527,6 +533,10 @@ NabtsCarriedFile assemble(const CarouselFile& file, uint16_t channel) {
       carried.data[base + i] = value;
       present[base + i] = kNabtsByteArrived;
     }
+  }
+  // Blocks past the last one any copy of arrived have no place at all.
+  if (file.blocks.size() * kNabtsCarouselBlockData < file.length) {
+    whole = false;
   }
   if (!whole) {
     carried.data_present = std::move(present);
@@ -681,8 +691,6 @@ std::vector<NabtsCarriedFile> carousel_files(
       file.time = time;
       file.length = length;
       file.checksum = checksum;
-      file.blocks.resize((length + kNabtsCarouselBlockData - 1) /
-                         kNabtsCarouselBlockData);
       it = files.emplace(key, std::move(file)).first;
     }
     if (!it->second.checksum) {

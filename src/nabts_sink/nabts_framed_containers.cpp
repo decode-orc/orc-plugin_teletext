@@ -230,7 +230,7 @@ bool nabts_framed_container(const NabtsCarriedFile& file) {
 }
 
 std::optional<NabtsCarriedFile> nabts_framed_container_content(
-    const NabtsCarriedFile& file) {
+    const NabtsCarriedFile& file, size_t limit) {
   if (!nabts_framed_container(file)) {
     return std::nullopt;
   }
@@ -250,7 +250,7 @@ std::optional<NabtsCarriedFile> nabts_framed_container_content(
     // The stream as far as its bytes are whole: a hole's zeros are no
     // stream's.
     NabtsDecompressed unpacked = nabts_inflate(
-        data.data() + at, whole_to(file, at) - at, kNabtsCarriedBytesMax);
+        data.data() + at, whole_to(file, at) - at, limit);
     if (unpacked.bytes.empty()) {
       return std::nullopt;
     }
@@ -292,7 +292,7 @@ std::optional<NabtsCarriedFile> nabts_framed_container_content(
   const size_t packed = std::min<size_t>(nabts_le32(data.data() + record),
                                          whole_to(file, at) - at);
   NabtsDecompressed unpacked =
-      nabts_explode(data.data() + at, packed, kNabtsCarriedBytesMax);
+      nabts_explode(data.data() + at, packed, limit);
   if (unpacked.bytes.empty()) {
     return std::nullopt;
   }
@@ -313,7 +313,7 @@ std::optional<NabtsCarriedFile> nabts_framed_container_content(
 }
 
 std::optional<NabtsCarriedFile> nabts_framed_container_reopened(
-    const NabtsCarriedFile& file) {
+    const NabtsCarriedFile& file, size_t limit) {
   // The bytes lost from its opening on.
   if (file.data_present.empty() || file.data_present[0] != 0) {
     return std::nullopt;
@@ -361,7 +361,7 @@ std::optional<NabtsCarriedFile> nabts_framed_container_reopened(
         trial.data_present.clear();
       }
       std::optional<NabtsCarriedFile> content =
-          nabts_framed_container_content(trial);
+          nabts_framed_container_content(trial, limit);
       if (!content || content->cut_short ||
           !content->checksum_holds.value_or(false)) {
         continue;

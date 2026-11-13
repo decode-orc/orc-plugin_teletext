@@ -1298,7 +1298,8 @@ class FramedServicesReader {
                       max_file_bytes_ - held_files_);
       if (merged_read && nabts_framed_container(merged_read->file)) {
         const std::optional<NabtsCarriedFile> content =
-            nabts_framed_container_content(merged_read->file);
+            nabts_framed_container_content(merged_read->file,
+                                           max_file_bytes_ - held_files_);
         if (content && !content->cut_short &&
             content->checksum_holds.value_or(false)) {
           versions = {std::move(together)};
@@ -1351,7 +1352,8 @@ class FramedServicesReader {
                           kNabtsFrameObjectHeaderBytes + *length);
           if (assumed) {
             if (std::optional<NabtsCarriedFile> content =
-                    nabts_framed_container_reopened(assumed->file)) {
+                    nabts_framed_container_reopened(
+                        assumed->file, max_file_bytes_ - held_files_)) {
               ++framed.containers;
               ++framed.containers_unpacked;
               ++framed.containers_reopened;
@@ -1365,8 +1367,11 @@ class FramedServicesReader {
       // stands for it.
       if (!reopened && nabts_framed_container(object->file)) {
         ++framed.containers;
+        // Unpacked within what is left of the budget, so a container that
+        // inflates past it costs no more than the budget to find out.
         if (std::optional<NabtsCarriedFile> content =
-                nabts_framed_container_content(object->file)) {
+                nabts_framed_container_content(
+                    object->file, max_file_bytes_ - held_files_)) {
           const bool whole =
               !content->cut_short && content->checksum_holds.value_or(false);
           ++(whole ? framed.containers_unpacked : framed.containers_in_part);
