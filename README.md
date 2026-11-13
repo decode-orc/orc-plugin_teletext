@@ -249,3 +249,18 @@ Release with the tagged artifacts and the manifest attached.
 ## License
 
 GPL-3.0-or-later
+
+## Third-party material
+
+The NABTS sink's datacast decompression (`src/nabts_sink/nabts_decompress.cpp`)
+is an altered version of Mark Adler's puff and blast, the reference decoders
+distributed with zlib: blast's explode tables and puff's Huffman construction
+and decoding, rewritten in C++. Their zlib licence notices are kept in that
+file, which is marked as altered.
+
+The NABTS record viewer draws NAPLPS characters from the 5x8, 6x10, 6x13, 9x15
+and 10x20 members of the X11 "misc-fixed" bitmap font family (X.Org
+`font-misc-misc` 1.1.3, public domain: "Public domain font. Share and enjoy.").
+The tables are generated from the upstream release's BDF sources by
+`src/nabts_sink/tools/generate_naplps_font.py`, which documents where to get
+them.
