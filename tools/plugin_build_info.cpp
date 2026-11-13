@@ -15,9 +15,11 @@
 // and prints the descriptor's own values; scripts/package_local.sh turns them
 // into the manifest.
 
-#include "plugin.h"
+#include <orc/view/orc_view_plugin_abi.h>
 
 #include <cstdio>
+
+#include "plugin.h"
 
 int main() {
   const auto& descriptor = orc::plugins::teletext::kPluginDescriptor;
@@ -29,6 +31,12 @@ int main() {
   std::printf("api=%u\n", descriptor.plugin_api_version);
   std::printf("toolchain_tag=%s\n", descriptor.toolchain_tag);
   std::printf("license_spdx=%s\n", descriptor.license_spdx);
+#if defined(ORC_VIEW_QT_VERSION)
+  // Only when the view binary is built: package_local.sh adds its manifest
+  // entry from these.
+  std::printf("view_abi=%u\n", orc::view::kViewPluginAbiVersion);
+  std::printf("view_qt=%s\n", ORC_VIEW_QT_VERSION);
+#endif
 
   return 0;
 }

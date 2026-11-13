@@ -14,8 +14,10 @@
     # Not imported as a flake: the plugin needs the SDK sources, not the
     # host's packages or dev-shell inputs. Move the pin with
     #   nix flake update decode-orc
+    # Temporarily the issue-377 branch: the view SDK tier (orc/view/) is not
+    # on main yet. Restore the plain URL (main) once issue-377 merges.
     decode-orc = {
-      url = "github:decode-orc/decode-orc";
+      url = "github:decode-orc/decode-orc/issue-377";
       flake = false;
     };
   };
@@ -39,7 +41,10 @@
           src = self;
 
           nativeBuildInputs = with pkgs; [ cmake ninja ];
-          buildInputs = with pkgs; [ fmt spdlog gtest ];
+          # qt6.qtbase for the view binary (orc-view_teletext).
+          buildInputs = with pkgs; [ fmt spdlog gtest qt6.qtbase ];
+          # A library, not an application: nothing to wrap.
+          dontWrapQtApps = true;
 
           cmakeFlags = [
             "-DORC_INTREE_SDK_DIR=${decode-orc}"
@@ -77,6 +82,12 @@
             # FFmpeg to unwrap FLAC-compressed captures.
             gtest
             ffmpeg
+
+            # The view binary links Qt 6 Widgets. A release view is built
+            # against the view Qt baseline instead (CI installs it; see
+            # decode-orc's plugin-sdk.md), since orc-gui refuses a view built
+            # for a newer Qt minor than its own.
+            qt6.qtbase
 
             # Development tools.
             clang-tools

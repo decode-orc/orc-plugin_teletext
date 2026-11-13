@@ -327,6 +327,33 @@ const CatalogueItem* page_variant(const CatalogueDataset& catalogue) {
   return nullptr;
 }
 
+TEST(TeletextCatalogueView, OffersAPagesFlofLinksAsItsKeys) {
+  // EN 300 706 Annex H.2: the first four links of X/27/0 are the coloured
+  // keys, the sixth the index key; the fifth is for the receiver alone.
+  TeletextAnalysisDataset dataset = make_dataset("INDEX", TeletextG0Set::Latin);
+  TeletextPageSnapshot& page = dataset.pages.front().subpages.front().page;
+  page.links[0] = TeletextPageLink{1, 0x02, kTeletextAnySubcode};
+  page.links[3] = TeletextPageLink{2, 0x50, kTeletextAnySubcode};
+  page.links[4] = TeletextPageLink{1, 0x99, kTeletextAnySubcode};
+  page.links[5] = TeletextPageLink{1, 0x00, kTeletextAnySubcode};
+
+  const CatalogueDataset catalogue = build_teletext_catalogue(dataset);
+  const CatalogueItem* item = page_variant(catalogue);
+  ASSERT_NE(item, nullptr);
+  ASSERT_EQ(item->links.size(), 3u);
+  for (const CatalogueLink& link : item->links) {
+    EXPECT_EQ(link.role, CatalogueLink::Role::kKey) << link.label;
+  }
+  EXPECT_EQ(item->links[0].label, "Red");
+  EXPECT_EQ(item->links[0].target_id, "102");
+  EXPECT_EQ(item->links[1].label, "Cyan");
+  EXPECT_EQ(item->links[1].target_id, "250");
+  EXPECT_EQ(item->links[2].label, "Index");
+  EXPECT_EQ(item->links[2].target_id, "100");
+  // The page's own row carries them too, for a reader who selects the page.
+  EXPECT_EQ(catalogue.items.front().links.size(), 3u);
+}
+
 TEST(TeletextCatalogueView, DrawsALevel15CharacterInPlaceOfTheLevel1One) {
   TeletextAnalysisDataset dataset = make_dataset("CAFE", TeletextG0Set::Latin);
   TeletextPageSnapshot& page = dataset.pages.front().subpages.front().page;

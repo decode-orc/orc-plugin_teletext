@@ -92,6 +92,10 @@ struct TeletextSinkOptions {
   // it. The report is always built; this only decides whether it is kept
   // somewhere a reader can go back to.
   bool write_report{false};
+  // Write everything the run decoded under <output_path>.export
+  // (teletext_export_data()) once the run has finished. Done by the stage
+  // from the published results, not by the deps; needs an output path.
+  bool export_data{false};
 };
 
 struct TeletextSinkResult {

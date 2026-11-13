@@ -10,8 +10,6 @@
 #ifndef CATALOGUECELLGRIDWIDGET_H
 #define CATALOGUECELLGRIDWIDGET_H
 
-#include <orc/stage/tooling/catalogue_results.h>
-
 #include <QImage>
 #include <QPainterPath>
 #include <QPointer>
@@ -20,6 +18,8 @@
 #include <QWidget>
 #include <optional>
 #include <unordered_map>
+
+#include "catalogue/catalogue_model.h"
 
 class CatalogueFlashClock;
 class QPainter;
@@ -73,7 +73,7 @@ class CatalogueCellGridWidget : public QWidget {
    * @brief Drive the flash phase from |clock|
    *
    * nullptr detaches, which leaves the grid in its lit phase. The dialogue
-   * hands the same clock to every payload view so they flash in step.
+   * owns the clock, so stepping between pages does not restart the cycle.
    */
   void setFlashClock(CatalogueFlashClock* clock);
 

@@ -52,11 +52,42 @@ stage's `instructions.md`.
   They are plugin-local code shared between `teletext_sink` and `nabts_sink`,
   not an API third-party plugins can rely on.
 
-- Each stage implements `ICatalogueResults`
-  (`<orc/stage/tooling/catalogue_results.h>`) and declares
-  `StageToolKind::CatalogueBrowser` so the host's generic catalogue browser can
-  present its pages/records; neither uses the removed format-specific
-  analysis-sink result types.
+- Each stage declares a `StageToolKind::PluginView` tool (Teletext Pages,
+  NABTS Records) and implements `IStageToolRequestHandler`
+  (`<orc/stage/tooling/stage_tool_requests.h>`). The browser is this plugin's
+  own view binary (see below), not host code.
+
+## The View Binary
+
+The catalogue browser is a second shared library, `orc-view_teletext`
+(`view/`), which `orc-gui` loads beside the stage binary and `orc-cli` never
+opens. It links Qt 6 Core, Gui and Widgets and, of the SDK, only the view
+tier (`<orc/view/...>`); `scripts/check_sdk_boundary.sh` refuses any other SDK
+header there.
+
+- Both stages' tools use one contract,
+  `org.decodeorc.teletext.catalogue-view.v1`, and the view registers one
+  window for it.
+- The view talks to the stage through the tool session it is opened with,
+  in three verbs: `catalogue` (the catalogue under the reader's view option
+  and toggles), `played` (an item that takes keys, after the keys pressed on
+  it) and `export` (Export All's `data/` half, written by the stage from its
+  last trigger). The stage answers in bytes. The types
+  (`src/catalogue/catalogue_model.h`) and the byte format
+  (`src/catalogue/catalogue_wire.h`) are this plugin's own: both halves build
+  them from the same checkout, so changing them changes nothing in
+  decode-orc. Bump `kCatalogueWireVersion` when the format changes; a view
+  and stage from different releases then say so instead of misreading each
+  other.
+- Release views are built against the view Qt baseline, Qt 6.9 (decode-orc's
+  `plugin-sdk.md`, "View Qt baseline"). `orc-gui` refuses a view built for a
+  newer Qt minor than its own. CI builds Linux in `org.kde.Sdk//6.9`, and
+  installs Qt 6.9 on macOS and Windows.
+- `BUILD_VIEW` (default `ON`) builds it when Qt 6 Widgets is found, and
+  quietly leaves it out when not. `orc-plugin-build-info` then also prints
+  `view_abi` and `view_qt`, and `scripts/package_local.sh` adds a `kind: view`
+  entry to the manifest (`manifest_schema: 2`).
+- `tests/view/` (ctest label `view`) runs the browser's widgets offscreen.
 
 ## Instructions-per-stage
 

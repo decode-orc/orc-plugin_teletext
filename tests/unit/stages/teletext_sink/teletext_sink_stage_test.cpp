@@ -128,24 +128,77 @@ TEST_F(TeletextSinkStage, NodeTypeInfo_MatchesDesign) {
   EXPECT_EQ(info.compatible_formats, orc::VideoFormatCompatibility::ALL);
 }
 
-// The host routes the viewer on the tool kind and the contract string alone —
-// it knows nothing about teletext — so both must name the generic catalogue
-// browser.
-TEST_F(TeletextSinkStage, StageTools_AdvertiseTheCatalogueContract) {
+// The host opens the window the plugin's view binary registered for the
+// tool's contract, so the tool must be a plugin view under the contract the
+// view registers.
+TEST_F(TeletextSinkStage, StageTools_AdvertiseTheCatalogueView) {
   const auto tools = instance_->get_stage_tools();
   ASSERT_EQ(tools.size(), 1u);
   EXPECT_EQ(tools[0].tool_id, "teletext_analysis");
-  EXPECT_EQ(tools[0].kind, orc::StageToolKind::CatalogueBrowser);
-  EXPECT_EQ(tools[0].contract_id, orc::kCatalogueBrowserContractId);
+  EXPECT_EQ(tools[0].kind, orc::StageToolKind::PluginView);
+  EXPECT_EQ(tools[0].contract_id, orc::teletext_wire::kCatalogueViewContractId);
 }
 
-// The host discovers the viewer through StageToolProvider and reads it through
-// ICatalogueResults; AnalysisToolProvider is the other, unrelated seam and must
-// not resolve.
+// The host discovers the tool through StageToolProvider and carries the view's
+// requests through IStageToolRequestHandler; AnalysisToolProvider is the
+// other, unrelated seam and must not resolve.
 TEST_F(TeletextSinkStage, Mixins_ExposeStageToolProviderOnly) {
   EXPECT_NE(dynamic_cast<orc::StageToolProvider*>(instance_.get()), nullptr);
-  EXPECT_NE(dynamic_cast<orc::ICatalogueResults*>(instance_.get()), nullptr);
+  EXPECT_NE(dynamic_cast<orc::IStageToolRequestHandler*>(instance_.get()),
+            nullptr);
   EXPECT_EQ(dynamic_cast<orc::AnalysisToolProvider*>(instance_.get()), nullptr);
+}
+
+// Opening the tool only reads: before a trigger the view is told why there is
+// nothing, rather than sent an empty catalogue.
+TEST_F(TeletextSinkStage, ToolRequest_SaysWhyBeforeATrigger) {
+  const orc::StageToolReply reply = instance_->handle_tool_request(
+      orc::teletext_wire::kCatalogueViewContractId,
+      orc::teletext_wire::kCatalogueVerb, {});
+  EXPECT_FALSE(reply.ok);
+  EXPECT_EQ(reply.error, orc::teletext_wire::kNotTriggeredMessage);
+  EXPECT_TRUE(reply.data.empty());
+}
+
+TEST_F(TeletextSinkStage, ToolRequest_RefusesAnotherContractOrVerb) {
+  EXPECT_FALSE(instance_
+                   ->handle_tool_request("some.other.contract",
+                                         orc::teletext_wire::kCatalogueVerb, {})
+                   .ok);
+  const orc::StageToolReply reply = instance_->handle_tool_request(
+      orc::teletext_wire::kCatalogueViewContractId, "explode", {});
+  EXPECT_FALSE(reply.ok);
+  EXPECT_NE(reply.error.find("explode"), std::string::npos);
+}
+
+TEST_F(TeletextSinkStage, ToolRequest_RefusesAMalformedSelection) {
+  const orc::StageToolReply reply = instance_->handle_tool_request(
+      orc::teletext_wire::kCatalogueViewContractId,
+      orc::teletext_wire::kCatalogueVerb, {1, 2, 3});
+  EXPECT_FALSE(reply.ok);
+  EXPECT_FALSE(reply.error.empty());
+}
+
+// After a trigger the view is sent the catalogue the stage holds, whole.
+TEST_F(TeletextSinkStage, ToolRequest_SendsTheCatalogueAfterATrigger) {
+  orc::TeletextSinkResult deps_result;
+  deps_result.success = true;
+  orc::TeletextSinkOptions captured;
+  expect_export(deps_result, captured);
+  ASSERT_TRUE(
+      instance_->trigger(make_valid_input(), {}, mockObservationContext_));
+
+  const orc::StageToolReply reply = instance_->handle_tool_request(
+      orc::teletext_wire::kCatalogueViewContractId,
+      orc::teletext_wire::kCatalogueVerb, {});
+  ASSERT_TRUE(reply.ok) << reply.error;
+  orc::CatalogueDataset sent;
+  std::string error;
+  ASSERT_TRUE(orc::teletext_wire::decode_catalogue(reply.data, sent, &error))
+      << error;
+  EXPECT_EQ(sent.schema.item_noun, instance_->catalogue().schema.item_noun);
+  EXPECT_EQ(sent.items.size(), instance_->catalogue().items.size());
+  EXPECT_EQ(sent.summary.headline, instance_->catalogue().summary.headline);
 }
 
 // An untriggered stage has an empty catalogue rather than no catalogue: the
@@ -167,7 +220,7 @@ TEST_F(TeletextSinkStage, Results_AreEmptyUntilTriggered) {
 
 TEST_F(TeletextSinkStage, ParameterDescriptors_MatchSpecTable) {
   const auto descriptors = instance_->get_parameter_descriptors();
-  ASSERT_EQ(descriptors.size(), 16u);
+  ASSERT_EQ(descriptors.size(), 17u);
 
   EXPECT_EQ(descriptors[0].name, "output_path");
   EXPECT_EQ(descriptors[0].type, orc::ParameterType::FILE_PATH);
@@ -268,29 +321,35 @@ TEST_F(TeletextSinkStage, ParameterDescriptors_MatchSpecTable) {
   ASSERT_TRUE(descriptors[12].constraints.default_value.has_value());
   EXPECT_EQ(std::get<bool>(*descriptors[12].constraints.default_value), false);
 
-  EXPECT_EQ(descriptors[13].name, "export_subtitles");
+  // Off by default; it writes beside the packet stream, as the report does.
+  EXPECT_EQ(descriptors[13].name, "export_data");
   EXPECT_EQ(descriptors[13].type, orc::ParameterType::BOOL);
   ASSERT_TRUE(descriptors[13].constraints.default_value.has_value());
   EXPECT_EQ(std::get<bool>(*descriptors[13].constraints.default_value), false);
 
-  EXPECT_EQ(descriptors[14].name, "subtitle_page");
-  EXPECT_EQ(descriptors[14].type, orc::ParameterType::STRING);
+  EXPECT_EQ(descriptors[14].name, "export_subtitles");
+  EXPECT_EQ(descriptors[14].type, orc::ParameterType::BOOL);
   ASSERT_TRUE(descriptors[14].constraints.default_value.has_value());
-  EXPECT_EQ(std::get<std::string>(*descriptors[14].constraints.default_value),
-            "888");
-  ASSERT_TRUE(descriptors[14].constraints.depends_on.has_value());
-  EXPECT_EQ(descriptors[14].constraints.depends_on->parameter_name,
-            "export_subtitles");
+  EXPECT_EQ(std::get<bool>(*descriptors[14].constraints.default_value), false);
 
-  EXPECT_EQ(descriptors[15].name, "subtitle_format");
+  EXPECT_EQ(descriptors[15].name, "subtitle_page");
   EXPECT_EQ(descriptors[15].type, orc::ParameterType::STRING);
-  ASSERT_EQ(descriptors[15].constraints.allowed_strings.size(), 1u);
-  EXPECT_EQ(descriptors[15].constraints.allowed_strings[0], "SRT");
   ASSERT_TRUE(descriptors[15].constraints.default_value.has_value());
   EXPECT_EQ(std::get<std::string>(*descriptors[15].constraints.default_value),
-            "SRT");
+            "888");
   ASSERT_TRUE(descriptors[15].constraints.depends_on.has_value());
   EXPECT_EQ(descriptors[15].constraints.depends_on->parameter_name,
+            "export_subtitles");
+
+  EXPECT_EQ(descriptors[16].name, "subtitle_format");
+  EXPECT_EQ(descriptors[16].type, orc::ParameterType::STRING);
+  ASSERT_EQ(descriptors[16].constraints.allowed_strings.size(), 1u);
+  EXPECT_EQ(descriptors[16].constraints.allowed_strings[0], "SRT");
+  ASSERT_TRUE(descriptors[16].constraints.default_value.has_value());
+  EXPECT_EQ(std::get<std::string>(*descriptors[16].constraints.default_value),
+            "SRT");
+  ASSERT_TRUE(descriptors[16].constraints.depends_on.has_value());
+  EXPECT_EQ(descriptors[16].constraints.depends_on->parameter_name,
             "export_subtitles");
 }
 
@@ -396,6 +455,35 @@ TEST_F(TeletextSinkStage, Trigger_RejectsFileExportsWithoutOutputPath) {
   EXPECT_EQ(instance_->get_trigger_status(),
             "Error: The report file needs an output file (it is written "
             "beside the packet stream)");
+
+  EXPECT_FALSE(instance_->trigger(make_valid_input(), {{"export_data", true}},
+                                  mockObservationContext_));
+  EXPECT_EQ(instance_->get_trigger_status(),
+            "Error: The decoded-data export needs an output file (its folder "
+            "is written beside the packet stream)");
+}
+
+// The export the viewer's Export All writes under data/ is also the run's own
+// output, so orc-cli produces it: written beside the packet stream, named
+// after it as written (the pass appended the extension), from the results the
+// run has just published.
+TEST_F(TeletextSinkStage, Trigger_ExportsTheDecodedDataBesideTheStream) {
+  orc::TeletextSinkResult deps_result;
+  deps_result.success = true;
+  deps_result.output_path = "out.t42";
+  orc::TeletextSinkOptions captured;
+  expect_export(deps_result, captured);
+
+  EXPECT_TRUE(instance_->trigger(
+      make_valid_input(),
+      {{"output_path", std::string("out")}, {"export_data", true}},
+      mockObservationContext_));
+
+  EXPECT_TRUE(captured.export_data);
+  EXPECT_NE(instance_->get_trigger_status().find(
+                "decoded-data files to out.t42.export"),
+            std::string::npos)
+      << instance_->get_trigger_status();
 }
 
 TEST_F(TeletextSinkStage, Trigger_RejectsInvalidLineWindows) {
@@ -799,7 +887,7 @@ TEST_F(TeletextSinkStage, ParameterDescriptors_FollowTheProjectFormat) {
   for (const auto system : {orc::VideoSystem::NTSC, orc::VideoSystem::PAL_M}) {
     const auto descriptors =
         instance_->get_parameter_descriptors(system, orc::SourceType::Unknown);
-    ASSERT_EQ(descriptors.size(), 13u) << static_cast<int>(system);
+    ASSERT_EQ(descriptors.size(), 14u) << static_cast<int>(system);
 
     EXPECT_EQ(descriptors[0].name, "output_path");
     EXPECT_EQ(descriptors[0].file_extension_hint, ".t34");
@@ -824,7 +912,7 @@ TEST_F(TeletextSinkStage, ParameterDescriptors_FollowTheProjectFormat) {
 TEST_F(TeletextSinkStage, ParameterDescriptors_DefaultToThe625Service) {
   const auto descriptors = instance_->get_parameter_descriptors(
       orc::VideoSystem::PAL, orc::SourceType::Unknown);
-  ASSERT_EQ(descriptors.size(), 16u);
+  ASSERT_EQ(descriptors.size(), 17u);
   EXPECT_EQ(descriptors[0].file_extension_hint, ".t42");
   EXPECT_EQ(std::get<int32_t>(*descriptors[1].constraints.default_value), 6);
   EXPECT_EQ(std::get<int32_t>(*descriptors[2].constraints.default_value), 22);

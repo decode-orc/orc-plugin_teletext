@@ -580,11 +580,40 @@ TEST_F(NabtsSinkStage, Catalogue_FallsBackToTheReferenceForAnUnknownOption) {
 // with, because what the viewer shows first should be what the recording
 // carried. The toggle is part of what the cached catalogue was built under, so
 // switching it rebuilds rather than serving the other reading.
+// Which receiver paces the pages is the reader's to switch while looking:
+// Receiver pace plays the Norpak TTX 650's, TU-2000x pace the Panasonic
+// TU-2000x's, with or without Receiver pace. Each box reports what the reader
+// set, including when two requests come to the same receiver and the pages
+// already built are served again.
+TEST_F(NabtsSinkStage, Catalogue_OffersBothReceiversPaces) {
+  stage_.set_parameters(default_parameters());
+  triggerWithOneRecord(stage_);
+
+  const auto& toggles = stage_.catalogue().schema.toggles;
+  ASSERT_EQ(toggles.size(), 4u);
+  EXPECT_EQ(toggles[2].id, orc::kNabtsReceiverPaceToggleId);
+  EXPECT_EQ(toggles[3].id, orc::kNabtsTu2000xPaceToggleId);
+  EXPECT_FALSE(toggles[2].active);
+  EXPECT_FALSE(toggles[3].active);
+
+  const std::string pace(orc::kNabtsReceiverPaceToggleId);
+  const std::string tu(orc::kNabtsTu2000xPaceToggleId);
+  const auto& alone = stage_.catalogue("256 x 200", {tu}).schema.toggles;
+  EXPECT_FALSE(alone[2].active);
+  EXPECT_TRUE(alone[3].active);
+  const auto& both = stage_.catalogue("256 x 200", {pace, tu}).schema.toggles;
+  EXPECT_TRUE(both[2].active);
+  EXPECT_TRUE(both[3].active);
+  const auto& ttx = stage_.catalogue("256 x 200", {pace}).schema.toggles;
+  EXPECT_TRUE(ttx[2].active);
+  EXPECT_FALSE(ttx[3].active);
+}
+
 TEST_F(NabtsSinkStage, Catalogue_RebuildsWhenTheReconstructToggleChanges) {
   stage_.set_parameters(default_parameters());
   triggerWithOneRecord(stage_);
 
-  ASSERT_EQ(stage_.catalogue().schema.toggles.size(), 2u);
+  ASSERT_EQ(stage_.catalogue().schema.toggles.size(), 4u);
   EXPECT_EQ(stage_.catalogue().schema.toggles.front().id,
             orc::kNabtsReconstructToggleId);
   EXPECT_FALSE(stage_.catalogue().schema.toggles.front().active);
@@ -603,6 +632,37 @@ TEST_F(NabtsSinkStage, Catalogue_RebuildsWhenTheReconstructToggleChanges) {
   EXPECT_TRUE(fine.schema.toggles.front().active);
 }
 
+// The receiver's pace is the other toggle, keyed into the cache the same way:
+// the two switch independently, and each rebuild carries both.
+TEST_F(NabtsSinkStage, Catalogue_RebuildsWhenTheReceiverPaceToggleChanges) {
+  stage_.set_parameters(default_parameters());
+  triggerWithOneRecord(stage_);
+
+  const auto pace_active = [](const orc::CatalogueDataset& catalogue) {
+    for (const auto& toggle : catalogue.schema.toggles) {
+      if (toggle.id == orc::kNabtsReceiverPaceToggleId) {
+        return toggle.active;
+      }
+    }
+    ADD_FAILURE() << "no receiver pace toggle";
+    return false;
+  };
+  EXPECT_FALSE(pace_active(stage_.catalogue()));
+
+  const std::vector<std::string> pace{
+      std::string(orc::kNabtsReceiverPaceToggleId)};
+  const std::vector<std::string> both{
+      std::string(orc::kNabtsReconstructToggleId),
+      std::string(orc::kNabtsReceiverPaceToggleId)};
+  EXPECT_TRUE(pace_active(stage_.catalogue("256 x 200", pace)));
+  EXPECT_FALSE(
+      stage_.catalogue("256 x 200", pace).schema.toggles.front().active);
+  const auto& paced = stage_.catalogue("256 x 200", both);
+  EXPECT_TRUE(pace_active(paced));
+  EXPECT_TRUE(paced.schema.toggles.front().active);
+  EXPECT_FALSE(pace_active(stage_.catalogue("256 x 200", {})));
+}
+
 // Whether a damaged page is presented as recovered or as transmitted is the
 // reader's to switch while looking, so the browser is offered it.
 TEST_F(NabtsSinkStage, Catalogue_OffersSyntaxRepairToTheReader) {
@@ -610,7 +670,7 @@ TEST_F(NabtsSinkStage, Catalogue_OffersSyntaxRepairToTheReader) {
   triggerWithOneRecord(stage_);
 
   const auto& toggles = stage_.catalogue().schema.toggles;
-  ASSERT_EQ(toggles.size(), 2u);
+  ASSERT_EQ(toggles.size(), 4u);
   EXPECT_EQ(toggles[1].id, orc::kNabtsRepairToggleId);
   // Off unless the reader asks: what the viewer shows to begin with is what
   // the recording carried, and a reading of a damaged recording — however
@@ -670,6 +730,53 @@ TEST_F(NabtsSinkStage, Catalogue_TreatsAnUnknownToggleAsOff) {
 // ---------------------------------------------------------------------------
 // execute()
 // ---------------------------------------------------------------------------
+
+TEST_F(NabtsSinkStage, StageTools_AdvertiseTheCatalogueView) {
+  const auto tools = stage_.get_stage_tools();
+  ASSERT_EQ(tools.size(), 1u);
+  EXPECT_EQ(tools[0].tool_id, "nabts_analysis");
+  EXPECT_EQ(tools[0].kind, orc::StageToolKind::PluginView);
+  EXPECT_EQ(tools[0].contract_id, orc::teletext_wire::kCatalogueViewContractId);
+}
+
+TEST_F(NabtsSinkStage, ToolRequest_SaysWhyBeforeATrigger) {
+  const orc::StageToolReply reply =
+      stage_.handle_tool_request(orc::teletext_wire::kCatalogueViewContractId,
+                                 orc::teletext_wire::kCatalogueVerb, {});
+  EXPECT_FALSE(reply.ok);
+  EXPECT_EQ(reply.error, orc::teletext_wire::kNotTriggeredMessage);
+}
+
+// The reader's receiver and toggles travel with the request, and the
+// catalogue sent back was built under them.
+TEST_F(NabtsSinkStage, ToolRequest_BuildsUnderTheViewSelection) {
+  stage_.set_parameters(default_parameters());
+  triggerWithOneRecord(stage_);
+
+  orc::teletext_wire::ViewSelection selection;
+  selection.view_option = "512 x 400";
+  selection.active_toggles = {orc::kNabtsReconstructToggleId};
+  const orc::StageToolReply reply = stage_.handle_tool_request(
+      orc::teletext_wire::kCatalogueViewContractId,
+      orc::teletext_wire::kCatalogueVerb,
+      orc::teletext_wire::encode_view_selection(selection));
+  ASSERT_TRUE(reply.ok) << reply.error;
+
+  orc::CatalogueDataset sent;
+  std::string error;
+  ASSERT_TRUE(orc::teletext_wire::decode_catalogue(reply.data, sent, &error))
+      << error;
+  EXPECT_EQ(sent.schema.view_option, "512 x 400");
+  ASSERT_FALSE(sent.payloads.empty());
+  EXPECT_EQ(sent.payloads[0].display_list.nominal_width, 512);
+  const auto toggle =
+      std::find_if(sent.schema.toggles.begin(), sent.schema.toggles.end(),
+                   [](const orc::CatalogueViewToggle& t) {
+                     return t.id == orc::kNabtsReconstructToggleId;
+                   });
+  ASSERT_NE(toggle, sent.schema.toggles.end());
+  EXPECT_TRUE(toggle->active);
+}
 
 TEST_F(NabtsSinkStage, Execute_ProducesNoArtifacts) {
   orc::ObservationContext observations;

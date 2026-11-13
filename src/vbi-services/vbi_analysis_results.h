@@ -13,8 +13,8 @@
 
 // Shared plugin-side library, NOT part of the SDK contract, and no longer
 // crossing the plugin boundary at all: the two sink stages hold these types
-// privately and publish what the host reads through orc::ICatalogueResults
-// (<orc/stage/tooling/catalogue_results.h>), which is SDK. Nothing here has a
+// privately and hand their view binary a catalogue built from them
+// (src/catalogue/catalogue_model.h, sent as bytes). Nothing here has a
 // cross-DSO dynamic_cast against it, so nothing here depends on the runtime's
 // typeinfo-name fallback, and changing any of it costs a rebuild of the two
 // plugins alone — never an ABI bump for unrelated plugins, which is what these

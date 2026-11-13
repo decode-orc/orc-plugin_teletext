@@ -11,11 +11,10 @@
 #ifndef ORC_NABTS_SINK_NABTS_CATALOGUE_VIEW_H
 #define ORC_NABTS_SINK_NABTS_CATALOGUE_VIEW_H
 
-#include <orc/stage/tooling/catalogue_results.h>
-
 #include <string>
 #include <vector>
 
+#include "catalogue/catalogue_model.h"
 #include "naplps_receiver_pace.h"
 #include "naplps_render_grid.h"
 #include "vbi-services/nabts_page.h"

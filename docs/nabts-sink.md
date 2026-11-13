@@ -37,7 +37,7 @@ Recovery quality tracks the source's luma bandwidth, and NABTS is far less forgi
 
 * `output_path` (file path)
     - Path to the output packet stream; the `.t33` extension is appended if absent.
-    - Optional. Left empty, the run decodes exactly as it would but writes no file, which is what to do when the records themselves are what you are after — the **NABTS Records** tool is filled either way. `write_report`, `export_records` and `export_captions` are all written beside the packet stream, so enabling any of them without a path fails the run.
+    - Optional. Left empty, the run decodes exactly as it would but writes no file, which is what to do when the records themselves are what you are after — the **NABTS Records** tool is filled either way. `write_report`, `export_data`, `export_records` and `export_captions` are all written beside the packet stream, so enabling any of them without a path fails the run.
 * `first_vbi_line` (integer)
     - First candidate field line probed, 1-based, both fields. Range: 1–22.
     - Default: `10`.
@@ -71,6 +71,9 @@ Recovery quality tracks the source's luma bandwidth, and NABTS is far less forgi
     - Default: `0`.
 * `write_report` (boolean)
     - Write the run's diagnostic report next to the packet stream under its full name plus `.txt` (`mydata.t33` gives `mydata.t33.txt`), so it needs `output_path` set. Beyond the packet-level recovery profile it accounts for every layer above: packets orphaned rather than placed in a group, groups completed, record headers refused, linked series joined, records catalogued. The same report always goes to the log at debug level.
+    - Default: `false`.
+* `export_data` (boolean)
+    - Write everything the run decoded into a folder beside the packet stream, named after it plus `.export` (`mydata.t33.export`): the records as sent, the captions as subtitles, the datacasts and the files they carried, the network services' items, the report and a README. The same files the **NABTS Records** viewer's **Export All…** writes under `data/`, and the way to get them from `orc-cli`.
     - Default: `false`.
 * `export_records` (boolean)
     - Write each record as its own file beside the packet stream, named for the channel, record address and version that identify it (`mydata.t33.000-1A4-v2.rec`). The file holds the record's data as the record viewer reads it — NAPLPS presentation code, or application data for a type 2 record — which is what to hand to an external NAPLPS tool. Where an undamaged copy arrived that is that copy byte for byte; where none did, it is the combination of the damaged copies (see Notes). Byte parity is left in place.

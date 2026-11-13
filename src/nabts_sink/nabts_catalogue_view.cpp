@@ -131,18 +131,19 @@ void copy_attributes(const NabtsPrimitive& from,
   to.rotation_degrees = rotation_degrees(from.rotation);
   to.reverse_video = from.reverse_video;
   to.underlined = from.underlined;
-  naplps_catalogue_blink(to, from.colour_map_address, palette);
+  to.appear_ms = from.appear_ms;
 }
 
 /// Whether |candidate| could be drawn as part of a run already carrying the
-/// attributes of |run|.
+/// attributes of |run|. Drawn at a different moment is different: a run is
+/// one call, and a page that writes a word a letter at a time would otherwise
+/// show the whole word at the first letter.
 bool attributes_match(const CatalogueDrawOp& run,
                       const CatalogueDrawOp& candidate) {
   return run.colour == candidate.colour &&
          run.has_background == candidate.has_background &&
          run.background == candidate.background &&
-         run.blinking == candidate.blinking &&
-         run.blink_to == candidate.blink_to &&
+         run.appear_ms == candidate.appear_ms &&
          run.rotation_degrees == candidate.rotation_degrees &&
          run.reverse_video == candidate.reverse_video &&
          run.underlined == candidate.underlined &&
@@ -164,7 +165,8 @@ bool drawn_over(const CatalogueDrawOp& early, const CatalogueDrawOp& late) {
     return std::fabs(a.dx - b.dx) < kOriginEpsilon &&
            std::fabs(a.dy - b.dy) < kOriginEpsilon;
   };
-  return early.kind == late.kind && same_point(early.origin, late.origin) &&
+  return late.reveal_duration_ms == 0 && early.appear_ms == late.appear_ms &&
+         early.kind == late.kind && same_point(early.origin, late.origin) &&
          same_size(early.size, late.size) &&
          std::equal(early.points.begin(), early.points.end(),
                     late.points.begin(), late.points.end(), same_point) &&
@@ -1217,8 +1219,9 @@ class VectorStage {
   std::vector<const NabtsPrimitive*> pending_marks_;
 };
 
-/// The black display area a clear leaves.
-CatalogueDrawOp clear_op() {
+/// The black display area a clear leaves, swept a row at a time at a
+/// receiver's pace.
+CatalogueDrawOp clear_op(const NaplpsPaintStep& step, NabtsFillSweep sweep) {
   CatalogueDrawOp clear;
   clear.kind = CatalogueDrawKind::kRectangle;
   clear.filled = true;
@@ -1226,11 +1229,13 @@ CatalogueDrawOp clear_op() {
   clear.size = CatalogueSize{1.0, kNabtsDisplayAreaHeight};
   clear.points.push_back(clear.origin);
   clear.colour = naplps_catalogue_colour(kNabtsNominalBlack);
+  clear.appear_ms = step.time_ms;
+  naplps_reveal_op(clear, step.draw_ms, 0.0, kNabtsDisplayAreaHeight, sweep);
   return clear;
 }
 
 /**
- * @brief Scroll what is listed with |primitive|, a kScroll
+ * @brief Scroll what is listed with |primitive|, a kScroll at |time_ms|
  *
  * The display inside the area at |origin| of |size| moves by |points|[0], and
  * what moves out of the area is lost: SCROLL ON text whose cursor runs off the
@@ -1244,7 +1249,7 @@ CatalogueDrawOp clear_op() {
  * What moves is moved where it was listed, so a page that scrolls after a WAIT
  * shows its earlier stages at their scrolled places from the start.
  */
-void scroll_whole_display(const NabtsPrimitive& primitive,
+void scroll_whole_display(const NabtsPrimitive& primitive, uint32_t time_ms,
                           const NaplpsRenderGrid& grid,
                           const NaplpsPaletteTimeline& palette,
                           std::vector<CatalogueDrawOp>& listed,
@@ -1293,6 +1298,7 @@ void scroll_whole_display(const NabtsPrimitive& primitive,
                             std::max(0.0, dy - grid.pitch_y())};
     op.points.push_back(op.origin);
     op.colour = ground;
+    op.appear_ms = time_ms;
     stage.draw(std::move(op));
   };
   if (by.y != 0.0) {
@@ -1335,9 +1341,12 @@ CatalogueDrawOp colour_run_op(const NabtsPrimitive& primitive,
   return op;
 }
 
-/// A geometric figure: a point, line, arc, rectangle or polygon.
+/// A geometric figure: a point, line, arc, rectangle or polygon. A fill the
+/// receiver swept across its screen, at its pace, appears a row at a time over
+/// the time it took.
 CatalogueDrawOp figure_op(const NabtsPrimitive& primitive,
-                          const NaplpsPaletteTimeline& palette) {
+                          const NaplpsPaletteTimeline& palette,
+                          NabtsFillSweep sweep) {
   CatalogueDrawOp op;
   op.kind = to_draw_kind(primitive.kind);
   copy_attributes(primitive, palette, op);
@@ -1347,6 +1356,11 @@ CatalogueDrawOp figure_op(const NabtsPrimitive& primitive,
   }
   op.origin = to_point(primitive.origin);
   op.size = to_size(primitive.size);
+  double low = 0.0;
+  double high = 0.0;
+  if (primitive.draw_ms > 0 && naplps_fill_rows(primitive, low, high)) {
+    naplps_reveal_op(op, primitive.draw_ms, low, high, sweep);
+  }
   return op;
 }
 
@@ -1412,13 +1426,11 @@ CatalogueDisplayList nabts_page_display_list(const NabtsPageSnapshot& snapshot,
     return out;
   }
 
-  // How the colour map changes as the page is shown (§5.3.2.5, §5.3.2.7). The
-  // SDK this builds against carries the final map only, so an entry that
-  // settles into a two-colour blink is drawn blinking and any other change is
-  // not shown (naplps_catalogue_blink()).
+  // How the colour map changes as the page is shown (§5.3.2.5, §5.3.2.7): the
+  // operations name the entries that change, and the list carries how.
   const NaplpsPaletteTimeline palette =
       naplps_palette_timeline(snapshot.timeline);
-  naplps_emit_palette(snapshot, out);
+  naplps_emit_palette(snapshot, palette, out);
 
   // The glyph list is indexed by the operations, so it is built first and the
   // code position a character was defined at maps to its place in the list.
@@ -1459,14 +1471,14 @@ CatalogueDisplayList nabts_page_display_list(const NabtsPageSnapshot& snapshot,
       // leaves.
       stage.clear();
       if (!out.ops.empty()) {
-        stage.draw(clear_op());
+        stage.draw(clear_op(step, snapshot.timeline.fill_sweep));
       }
       continue;
     }
     const NabtsPrimitive& primitive = *step.primitive;
 
     if (primitive.kind == NabtsPrimitiveKind::kScroll) {
-      scroll_whole_display(primitive, grid, palette, out.ops,
+      scroll_whole_display(primitive, step.time_ms, grid, palette, out.ops,
                            stage);
       continue;
     }
@@ -1475,7 +1487,7 @@ CatalogueDisplayList nabts_page_display_list(const NabtsPageSnapshot& snapshot,
       continue;
     }
     if (primitive.kind != NabtsPrimitiveKind::kCharacter) {
-      stage.draw(figure_op(primitive, palette));
+      stage.draw(figure_op(primitive, palette, snapshot.timeline.fill_sweep));
       continue;
     }
     if (naplps_character_too_small(primitive, snapshot.drcs)) {
@@ -2639,6 +2651,15 @@ constexpr char kCaptionTrackId[] =
     "\x01"
     "captions";
 
+/// The number a viewer typed for |address| (nabts_keypad_number()), as an
+/// alias the find box takes for |item|, where the address has one.
+void add_keypad_alias(CatalogueItem& item, uint64_t address) {
+  const std::string number = nabts_keypad_number(address);
+  if (!number.empty()) {
+    item.find_aliases.push_back(number);
+  }
+}
+
 /// What a record is listed as instead of a page, or nullopt for a page: named
 /// for what it is where it was sent with nothing to draw (structural_role()),
 /// and listed as the data it is where what it was sent with is not NAPLPS
@@ -2760,6 +2781,42 @@ PageGroups::PageGroups(const std::vector<NabtsCataloguedRecord>& records) {
       rolling_page_shown[page.shown] = &page;
     }
   }
+}
+
+/**
+ * @brief Where each page of the service is in the list
+ *
+ * So a key pressed on a page or a number it offers can be followed: the
+ * address's page row where its records are stepped through as sub-pages (a
+ * carousel, the base of a More chain), and the record itself otherwise — the
+ * latest to be sent, where the recording carried several.
+ */
+std::map<AddressKey, std::string> page_item_ids(
+    const std::vector<NabtsCataloguedRecord>& records,
+    const PageGroups& groups) {
+  std::map<AddressKey, const NabtsCataloguedRecord*> latest_at;
+  for (const auto& record : records) {
+    if (!nabts_type_is_presentation(record.record_type)) {
+      continue;
+    }
+    const NabtsCataloguedRecord*& held =
+        latest_at[{record.channel, record.address}];
+    if (held == nullptr || record.last_seen_frame > held->last_seen_frame) {
+      held = &record;
+    }
+  }
+  std::map<AddressKey, std::string> item_at;
+  for (const auto& [key, record] : latest_at) {
+    const bool chained = groups.in_chain(*record);
+    if (chained && record->chain_position == 0) {
+      item_at[key] = chain_row_id(record->channel, record->chain_base_address);
+    } else if (!chained && groups.rolling.count(key) > 0) {
+      item_at[key] = rolling_row_id(*record);
+    } else {
+      item_at[key] = nabts_record_identity(*record);
+    }
+  }
+  return item_at;
 }
 
 /**
@@ -3018,6 +3075,8 @@ class CatalogueListing {
   CataloguePayload record_payload(
       const NabtsCataloguedRecord& record,
       const std::optional<StructuralRole>& role) const;
+  std::vector<CatalogueLink> links_of(
+      const NabtsCataloguedRecord& record) const;
   void mark_games(
       CatalogueItem& parent,
       const std::vector<const NabtsCataloguedRecord*>& members) const;
@@ -3032,6 +3091,7 @@ class CatalogueListing {
   const bool nothing_attested_;
   const PageGroups groups_;
   const ServiceSections sections_;
+  const std::map<AddressKey, std::string> item_at_;
   // The pages of games, each with the mark the list gives it: a page played
   // on the Option keys, and the pages of a quiz played by page number
   // (quiz_pages()). A record named for its role or listed as data is no page
@@ -3050,6 +3110,7 @@ CatalogueListing::CatalogueListing(
       nothing_attested_(summary.identity_reconciliation.withheld),
       groups_(records),
       sections_(records),
+      item_at_(page_item_ids(records, groups_)),
       quiz_(quiz_pages(records)) {
   for (const auto& record : records) {
     const bool keys = record.linked_keys != 0;
@@ -3118,6 +3179,7 @@ CatalogueItem CatalogueListing::chain_row(
   CatalogueItem parent;
   parent.id = chain_row_id(record.channel, record.chain_base_address);
   parent.find_key = label;
+  add_keypad_alias(parent, record.chain_base_address);
   parent.values = {
       label,
       short_type_name(record.record_type),
@@ -3185,6 +3247,7 @@ CatalogueItem CatalogueListing::rolling_row(
   CatalogueItem parent;
   parent.id = rolling_row_id(record);
   parent.find_key = label;
+  add_keypad_alias(parent, record.address);
   parent.values = {
       label, short_type_name(record.record_type), std::to_string(span.seen),
       frame_range(span.first_frame, span.last_frame), sections_.text(record)};
@@ -3218,6 +3281,67 @@ CatalogueItem CatalogueListing::rolling_row(
         ", each a sub-page labelled with every version it was sent under.";
   }
   return parent;
+}
+
+/**
+ * @brief Where the keys of a page and the numbers it offers lead
+ *
+ * As its decoder took them: NEXT the record the header names (§5.2.8.2 010),
+ * else the next page by number (nabts_next_page_address()); MORE the record
+ * the header names (001), else the More Flag's (§5.2.7.6); INDEX the record
+ * the header names (011), else the page's section index, else the Master
+ * Index (000) — the Panasonic TU-2000x's defaults. Only pages the recording
+ * carried are linked.
+ */
+std::vector<CatalogueLink> CatalogueListing::links_of(
+    const NabtsCataloguedRecord& record) const {
+  std::vector<CatalogueLink> links;
+  std::set<std::string> linked;
+  const auto add = [&](CatalogueLink::Role role, const std::string& label,
+                       uint64_t address) {
+    if (address == record.address) {
+      return false;
+    }
+    const auto target = item_at_.find({record.channel, address});
+    if (target == item_at_.end()) {
+      return false;
+    }
+    if (role == CatalogueLink::Role::kReference &&
+        !linked.insert(target->second).second) {
+      return false;
+    }
+    links.push_back(CatalogueLink{role, label, target->second});
+    return true;
+  };
+  // The keypad's keys first, INDEX, NEXT and MORE in the order the viewer
+  // offers them, then the numbers the page offers.
+  const std::optional<uint64_t> section = sections_.named(record);
+  if (record.has_index_address) {
+    add(CatalogueLink::Role::kKey, "INDEX", record.index_address);
+  } else if (!(section && *section != record.address &&
+               add(CatalogueLink::Role::kKey, "INDEX", *section))) {
+    add(CatalogueLink::Role::kKey, "INDEX", 0);
+  }
+  uint64_t next = 0;
+  if (record.has_next_address) {
+    add(CatalogueLink::Role::kKey, "NEXT", record.next_address);
+  } else if (nabts_next_page_address(record.address, next)) {
+    add(CatalogueLink::Role::kKey, "NEXT", next);
+  }
+  uint64_t more = 0;
+  if (record.more_redefined) {
+    if (record.has_more_address && record.more_channel == record.channel) {
+      add(CatalogueLink::Role::kKey, "MORE", record.more_address);
+    }
+  } else if (record.more &&
+             nabts_algorithmic_more_address(record.address, more)) {
+    add(CatalogueLink::Role::kKey, "MORE", more);
+  }
+  for (const uint64_t offered : record.offered_pages) {
+    const std::string number = nabts_keypad_number(offered);
+    add(CatalogueLink::Role::kReference, number, offered);
+  }
+  return links;
 }
 
 CatalogueItem CatalogueListing::record_item(
@@ -3254,6 +3378,14 @@ CatalogueItem CatalogueListing::record_item(
       frame_range(record.first_seen_frame, record.last_seen_frame),
       presentation ? sections_.text(record) : std::string{},
   };
+  // The number a viewer typed for the page, and where its keys and the
+  // numbers it offers lead (links_of()). A page salvaged without its record
+  // header has no number, and nothing says where its keys led.
+  if (presentation && !record.identity_lost) {
+    add_keypad_alias(item, record.address);
+    item.links = links_of(record);
+  }
+
   // Marked in the list, so the rows of one address in different versions
   // read as the revisions they are rather than as unrelated records.
   const auto versions =
@@ -3294,6 +3426,11 @@ CatalogueItem CatalogueListing::record_item(
     item.badges.push_back(role->badge);
   }
 
+  // A page played on the keypad: the keys it links to its own macros, which
+  // the viewer offers as a keypad of its own (CatalogueItem::keys).
+  if (presentation && !role && record.linked_keys != 0) {
+    item.keys = linked_key_ids(record);
+  }
   const auto game = games_.find(&record);
   if (game != games_.end()) {
     item.badges.push_back(game->second);
@@ -3318,15 +3455,14 @@ std::string CatalogueListing::record_tooltip(
                        : "* Syntax repair altered this record, though the "
                          "page draws exactly as it arrived.");
   }
-  if (nabts_type_is_presentation(record.record_type) &&
-      record.linked_keys != 0) {
-    tips.push_back(std::string("Marked ") + kNabtsKeypadGameBadge +
-                   ": this page links keys " +
-                   join(linked_key_ids(record), " ") +
-                   " to macros it defines and never runs itself, which a "
-                   "decoder of the day ran as the viewer pressed them (X3.110 "
-                   "§5.5, Table D1 item 7) — a game, played with the Option "
-                   "keys.");
+  if (!item.keys.empty()) {
+    tips.push_back(
+        std::string("Marked ") + kNabtsKeypadGameBadge +
+        ": this page links keys " + join(item.keys, " ") +
+        " to macros it defines and never runs itself, which a decoder of "
+        "the day ran as the viewer pressed them (X3.110 §5.5, Table D1 item "
+        "7) — a game, played with the Option keys. Press them on the "
+        "keypad under the page; Reset game starts it again.");
   }
   // A game page with no keys is a page of a quiz: that is why it is a game.
   if (games_.count(&record) > 0 && record.linked_keys == 0) {
@@ -4219,10 +4355,14 @@ CatalogueDataset build_nabts_catalogue(const NabtsAnalysisDataset& data,
   // reason the receiver is: it changes nothing the recovery found, and having
   // the readings side by side is how anyone judges whether a repair or a
   // rebuild restored the page or invented it.
-  // The receiver-pace toggles are not offered: they set when each figure
-  // appears, and the SDK this builds against draws a display list whole.
   out.schema.toggles = {naplps_reconstruct_toggle(reconstruct),
-                        naplps_repair_toggle(repair)};
+                        naplps_repair_toggle(repair),
+                        naplps_receiver_pace_toggle(receiver_pace),
+                        naplps_tu2000x_pace_toggle(tu2000x_pace)};
+
+  // The decoder's keypad, on every recording: its digits ask for a page by
+  // number, as the find box does, and play a page that links keys to macros.
+  out.schema.keypad_label = kNabtsKeypadLabel;
 
   CatalogueListing(records, data.summary, mode).append_to(out);
   append_caption_track(data, mode, repair, out);

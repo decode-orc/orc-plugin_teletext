@@ -23,7 +23,7 @@ run_search() {
 }
 
 # Restrict scanning to source/build files where violations matter.
-include_scan_paths=(src tests tools)
+include_scan_paths=(src tests tools view)
 link_scan_paths=(CMakeLists.txt tests cmake)
 
 say "[sdk-boundary] Scanning for private decode-orc include usage..."
@@ -31,6 +31,17 @@ include_hits="$(run_search '^[[:space:]]*#[[:space:]]*include[[:space:]]*[<\"](o
 if [[ -n "$include_hits" ]]; then
   say "$include_hits"
   say "[sdk-boundary] ERROR: Private host/core include path detected. Use only SDK headers under orc/sdk/include (orc/abi/, orc/plugin/, orc/stage/, orc/support/)."
+  fail=1
+fi
+
+# The view binary reaches the stage only through its tool session, so of the
+# SDK it includes the view tier alone (orc/view/); the catalogue's types come
+# from src/catalogue/, never from a stage header.
+say "[sdk-boundary] Scanning the view for stage-side SDK headers..."
+view_hits="$(run_search '^[[:space:]]*#[[:space:]]*include[[:space:]]*[<\"]orc/(abi|plugin|stage|support)/' view tests/view)"
+if [[ -n "$view_hits" ]]; then
+  say "$view_hits"
+  say "[sdk-boundary] ERROR: The view includes a stage-side SDK header. Use only <orc/view/...> there."
   fail=1
 fi
 

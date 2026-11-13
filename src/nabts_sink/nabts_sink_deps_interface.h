@@ -63,6 +63,10 @@ struct NabtsSinkOptions {
   // it. The report is always built; this only decides whether it is kept
   // somewhere a reader can go back to.
   bool write_report{false};
+  // Write everything the run decoded under <output_path>.export
+  // (nabts_export_data()) once the run has finished. Done by the stage from
+  // the published results, not by the deps; needs an output path.
+  bool export_data{false};
   // Write each catalogued record's data as a file beside the packet stream,
   // so the presentation code can be examined with external tools. Needs an
   // output path for the same reason the report does.

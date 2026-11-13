@@ -23,6 +23,7 @@
 #include <variant>
 #include <vector>
 
+#include "teletext_data_export.h"
 #include "teletext_frame_slicer.h"
 #include "teletext_sink_deps.h"
 #include "vbi-services/teletext_page_decoder.h"
@@ -161,6 +162,24 @@ std::vector<ArtifactPtr> TeletextSinkStage::execute(
         std::dynamic_pointer_cast<const VideoFrameRepresentation>(inputs[0]);
   }
   return {};
+}
+
+CatalogueExportResult TeletextSinkStage::export_data(
+    const std::string& directory) const {
+  std::lock_guard<std::mutex> lock(catalogue_mutex_);
+  CatalogueExportResult result;
+  if (!has_results_) {
+    return result;
+  }
+  result.supported = true;
+  VbiExportTally tally = teletext_export_data(
+      dataset_, report_, vbi_export_writer(stage_services_, directory));
+  result.files = tally.files;
+  result.failures = std::move(tally.failures);
+  result.summary = std::move(tally.summary);
+  ORC_LOG_INFO("TeletextSink: Exported {} file(s) to {}", result.files,
+               directory);
+  return result;
 }
 
 StagePreviewCapability TeletextSinkStage::get_preview_capability() const {
@@ -419,6 +438,26 @@ std::vector<ParameterDescriptor> TeletextSinkStage::get_parameter_descriptors(
     descriptors.push_back(desc);
   }
 
+  {
+    ParameterDescriptor desc;
+    desc.name = "export_data";
+    desc.display_name = "Export Decoded Data";
+    desc.description =
+        std::string(
+            "Write everything the run decoded into a folder beside the packet "
+            "stream, named after it (") +
+        (line_525 ? "mydata.t34 gives mydata.t34.export"
+                  : "mydata.t42 gives mydata.t42.export") +
+        "): the pages as text, with every version a sub-page went through, "
+        "the broadcast service data, the data lines' payloads, and a README "
+        "saying what each holds. The same files the viewer's Export All "
+        "writes under data/, from the same run. Needs an output file to sit "
+        "beside";
+    desc.type = ParameterType::BOOL;
+    desc.constraints.default_value = false;
+    descriptors.push_back(desc);
+  }
+
   // Subtitle export is 625-line only: the cue timing derives from the 50
   // fields per second of ITU-R BT.1700 Annex 1 Part B Table 1 item 2.
   if (!line_525) {
@@ -596,6 +635,7 @@ TeletextSinkOptions TeletextSinkStage::parse_config(
     throw std::runtime_error("Unknown page separation: " + page_separation);
   }
   options.write_report = get_bool_or(parameters, "write_report", false);
+  options.export_data = get_bool_or(parameters, "export_data", false);
   options.export_subtitles = get_bool_or(parameters, "export_subtitles", false);
   if (options.export_subtitles) {
     options.subtitle_page = get_string_or(parameters, "subtitle_page", "888");
@@ -625,6 +665,11 @@ TeletextSinkOptions TeletextSinkStage::parse_config(
       throw std::runtime_error(
           "The report file needs an output file (it is written beside the "
           "packet stream)");
+    }
+    if (options.export_data) {
+      throw std::runtime_error(
+          "The decoded-data export needs an output file (its folder is "
+          "written beside the packet stream)");
     }
   }
 
@@ -752,6 +797,24 @@ bool TeletextSinkStage::trigger(
     if (!result.report_path.empty()) {
       trigger_status_ += "; report to " + result.report_path;
     }
+    if (options.export_data) {
+      // From the results just published: nothing is decoded again. Named
+      // after the stream as written, with the extension the pass appended.
+      const std::string export_dir =
+          (result.output_path.empty() ? options.output_path
+                                      : result.output_path) +
+          ".export";
+      const CatalogueExportResult exported = export_data(export_dir);
+      trigger_status_ += "; " + std::to_string(exported.files) +
+                         " decoded-data files to " + export_dir;
+      if (!exported.failures.empty()) {
+        trigger_status_ += " (" + std::to_string(exported.failures.size()) +
+                           " could not be written)";
+        for (const std::string& failure : exported.failures) {
+          ORC_LOG_WARN("TeletextSink: {}", failure);
+        }
+      }
+    }
     ORC_LOG_INFO("TeletextSink: {}", trigger_status_);
     return true;
 
@@ -763,6 +826,46 @@ bool TeletextSinkStage::trigger(
 
 std::string TeletextSinkStage::get_trigger_status() const {
   return trigger_status_;
+}
+
+StageToolReply TeletextSinkStage::handle_tool_request(
+    const std::string& contract_id, const std::string& verb,
+    const std::vector<uint8_t>& payload) {
+  StageToolReply reply;
+  if (contract_id == teletext_wire::kCatalogueViewContractId &&
+      verb == teletext_wire::kExportVerb) {
+    teletext_wire::ExportRequest request;
+    if (!teletext_wire::decode_export_request(payload, request, &reply.error)) {
+      return reply;
+    }
+    reply.data =
+        teletext_wire::encode_export_result(export_data(request.directory));
+    reply.ok = true;
+    return reply;
+  }
+  if (contract_id != teletext_wire::kCatalogueViewContractId ||
+      verb != teletext_wire::kCatalogueVerb) {
+    reply.error =
+        "The teletext stage does not answer '" + verb + "' for " + contract_id;
+    return reply;
+  }
+  // Teletext offers no view options or toggles; the selection is read only so
+  // a malformed one is reported rather than ignored.
+  teletext_wire::ViewSelection selection;
+  if (!teletext_wire::decode_view_selection(payload, selection, &reply.error)) {
+    return reply;
+  }
+
+  // Encoded under the lock, so a trigger finishing meanwhile cannot replace
+  // the catalogue part way through.
+  std::lock_guard<std::mutex> lock(catalogue_mutex_);
+  if (!has_results_.load()) {
+    reply.error = teletext_wire::kNotTriggeredMessage;
+    return reply;
+  }
+  reply.data = teletext_wire::encode_catalogue(catalogue_locked());
+  reply.ok = true;
+  return reply;
 }
 
 }  // namespace orc

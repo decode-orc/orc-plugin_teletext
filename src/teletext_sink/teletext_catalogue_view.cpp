@@ -265,6 +265,28 @@ std::string run_headline(const TeletextRecoverySummary& summary) {
   return text;
 }
 
+/// The keys a page's packet X/27/0 gives a reader, as the FLOF Code of
+/// Practice assigns its links (EN 300 706 Annex H.2): the first four to the
+/// keys coloured red, green, yellow and cyan, the sixth to the index key. The
+/// fifth names a page for the receiver to fetch ahead and is no key.
+std::vector<CatalogueLink> page_links(const TeletextPageSnapshot& page) {
+  static const char* const kKeys[] = {"Red", "Green", "Yellow", "Cyan"};
+  constexpr size_t kPrefetchLink = 4;
+  constexpr size_t kIndexLink = 5;
+  std::vector<CatalogueLink> links;
+  for (size_t i = 0; i < page.links.size(); ++i) {
+    const auto& link = page.links[i];
+    if (!link.has_value() || i == kPrefetchLink) {
+      continue;
+    }
+    const std::string target = page_label(link->magazine, link->page_number);
+    links.push_back(CatalogueLink{CatalogueLink::Role::kKey,
+                                  i == kIndexLink ? "Index" : kKeys[i],
+                                  target});
+  }
+  return links;
+}
+
 /// What the page holds beyond its Level 1 rows, for its condition line.
 std::string enhancement_notes(const TeletextPageSnapshot& page) {
   std::string notes;
@@ -661,6 +683,9 @@ CatalogueDataset build_teletext_catalogue(const TeletextAnalysisDataset& data) {
       item.tooltip += (i == 0 ? "" : "\n\n") + tips[i];
     }
 
+    if (!page->subpages.empty()) {
+      item.links = page_links(page->subpages.front().page);
+    }
     out.items.push_back(std::move(item));
     // The page itself draws nothing: its sub-pages carry the content, and the
     // host shows the first of them when the page is selected.
@@ -721,6 +746,7 @@ CatalogueDataset build_teletext_catalogue(const TeletextAnalysisDataset& data) {
             page_condition(*version.page, version.lost_packets, rows_received,
                            damaged_bytes, unconfirmed_rows) +
             enhancement_notes(*version.page);
+        variant.links = page_links(*version.page);
 
         out.items.push_back(std::move(variant));
         out.payloads.push_back(std::move(payload));

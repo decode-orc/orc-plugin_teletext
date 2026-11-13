@@ -28,6 +28,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_TESTS "Build the plugin's unit and functional tests" ON)
 
+# The view binary (view/): the catalogue browser orc-gui opens for the two
+# stages' tools. Needs Qt 6 Widgets; built against the view Qt baseline for
+# release (decode-orc's plugin-sdk.md).
+option(BUILD_VIEW "Build the catalogue view binary (needs Qt 6 Widgets)" ON)
+
 # decode-orc turns this on when it builds this repository as a bundled
 # submodule (ORC_BUILD_OFFICIAL_PLUGINS), so the host treats the stages as
 # core stages. Release assets for the Plugin Manager leave it OFF.
@@ -60,6 +65,19 @@ endif()
 # --- Shared WST/NABTS decoding library -------------------------------------
 
 add_subdirectory(src/vbi-services)
+
+# --- The catalogue's types and byte format ----------------------------------
+#
+# Shared by the stage binary, which builds and sends the catalogue, and the
+# view binary, which draws it. Standard C++ only: no SDK, no Qt.
+
+add_library(orc-teletext-catalogue STATIC src/catalogue/catalogue_wire.cpp)
+set_target_properties(orc-teletext-catalogue PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON)
+target_include_directories(orc-teletext-catalogue PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # --- The plugin: one binary registering teletext_sink and nabts_sink --------
 
@@ -139,7 +157,7 @@ target_include_directories(orc-teletext-stages PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/teletext_sink
     ${CMAKE_CURRENT_SOURCE_DIR}/src/nabts_sink
 )
-target_link_libraries(orc-teletext-stages PUBLIC orc-vbi-services ${ORC_TELETEXT_SDK_TARGET})
+target_link_libraries(orc-teletext-stages PUBLIC orc-vbi-services orc-teletext-catalogue ${ORC_TELETEXT_SDK_TARGET})
 # Same compile-time log level orc_add_stage_plugin() gives the plugin target.
 target_compile_definitions(orc-teletext-stages PRIVATE
     $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
@@ -158,6 +176,20 @@ orc_add_stage_plugin(
 
 if(ORC_TELETEXT_AS_CORE_PLUGIN)
     target_compile_definitions(${ORC_TELETEXT_PLUGIN_TARGET} PRIVATE ORC_TELETEXT_CORE_PLUGIN=1)
+endif()
+
+# --- The view binary: the catalogue browser ---------------------------------
+
+set(ORC_TELETEXT_VIEW_TARGET orc-view_teletext)
+if(BUILD_VIEW)
+    find_package(Qt6 COMPONENTS Widgets)
+    if(NOT Qt6Widgets_FOUND)
+        message(STATUS "Qt 6 Widgets not found: building without the view binary")
+        set(BUILD_VIEW OFF)
+    endif()
+endif()
+if(BUILD_VIEW)
+    add_subdirectory(view)
 endif()
 
 # --- Per-stage instructions -------------------------------------------------
@@ -212,6 +244,11 @@ if(NOT ORC_TELETEXT_AS_CORE_PLUGIN)
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_definitions(orc-plugin-build-info PRIVATE
         ORC_STAGE_PLUGIN_VERSION="${ORC_PLUGIN_VERSION}")
+    if(BUILD_VIEW)
+        # The view's manifest entry declares the Qt it was built against.
+        target_compile_definitions(orc-plugin-build-info PRIVATE
+            ORC_VIEW_QT_VERSION="${Qt6Widgets_VERSION_MAJOR}.${Qt6Widgets_VERSION_MINOR}")
+    endif()
     set_target_properties(orc-plugin-build-info PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
 endif()

@@ -11,8 +11,7 @@
 #ifndef ORC_TELETEXT_SINK_TELETEXT_CATALOGUE_VIEW_H
 #define ORC_TELETEXT_SINK_TELETEXT_CATALOGUE_VIEW_H
 
-#include <orc/stage/tooling/catalogue_results.h>
-
+#include "catalogue/catalogue_model.h"
 #include "vbi-services/teletext_page_decoder.h"
 #include "vbi-services/vbi_analysis_results.h"
 

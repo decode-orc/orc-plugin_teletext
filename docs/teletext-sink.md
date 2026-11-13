@@ -30,7 +30,7 @@ Recovery quality tracks the source's luma bandwidth: LaserDisc and broadcast-qua
 
 * `output_path` (file path)
     - Path to the output packet stream. The service's extension is appended if absent — `.t42` on a 625-line source, `.t34` on a 525-line one.
-    - Optional. Left empty, the run decodes exactly as it would but writes no file, which is what to do when the pages themselves are what you are after — the **Teletext Pages** tool is filled either way. `write_report` and `export_subtitles` are written beside the packet stream, so enabling either without a path fails the run.
+    - Optional. Left empty, the run decodes exactly as it would but writes no file, which is what to do when the pages themselves are what you are after — the **Teletext Pages** tool is filled either way. `write_report`, `export_data` and `export_subtitles` are written beside the packet stream, so enabling any of them without a path fails the run.
 * `first_vbi_line` (integer)
     - First candidate field line probed, 1-based, both fields. Range: 1–22.
     - Default: `6` on a 625-line project, `10` on a 525-line one. The 625-line window 6–22 covers broadcast lines 6–22 and 318–335 (ETSI EN 300 706); the 525-line window 10–21 covers lines 10–21 and 273–284 (ITU-R BT.653 §2).
@@ -78,6 +78,9 @@ Recovery quality tracks the source's luma bandwidth: LaserDisc and broadcast-qua
 * `write_report` (boolean)
     - Write the run's diagnostic report next to the packet stream under its full name plus `.txt` (`mydata.t42` gives `mydata.t42.txt`, `mydata.t34` gives `mydata.t34.txt`), so it needs `output_path` set. It opens with the result in one line — `Data loss 1.14% — 30 of 2,640 recovered characters are damaged` — and the same figure appears in the stage's status when the run finishes. Below that it covers what was exported, how recovery went, how many pages were catalogued, and what combining repeated rows changed. The same report always goes to the log at debug level.
     - Damage is counted by the odd parity every display byte carries, over the display rows as written. It is a floor rather than an exact count — a byte damaged in two bits passes parity — and it says nothing about rows that never arrived.
+    - Default: `false`.
+* `export_data` (boolean)
+    - Write everything the run decoded into a folder beside the packet stream, named after it plus `.export` (`mydata.t42.export`): the pages as text with every version kept, the broadcast service data, the data lines' payloads, the report and a README. The same files the **Teletext Pages** viewer's **Export All…** writes under `data/`, and the way to get them from `orc-cli`.
     - Default: `false`.
 * `export_subtitles` (boolean)
     - Decode the subtitle page alongside the packet export and write timed cues to a `.srt` file next to the output. Offered on 625-line projects only: the cue timing derives from 50 fields per second. Text is written as UTF-8 through the page's own character set, so a UK page's `£` and a Cyrillic service's cues both reach the file as themselves.

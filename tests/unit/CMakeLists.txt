@@ -83,6 +83,7 @@ orc_teletext_add_unit_tests(orc-teletext-unit-tests-teletext-sink
 )
 
 orc_teletext_add_unit_tests(orc-teletext-unit-tests-vbi-services
+    common/catalogue/catalogue_wire_test.cpp
     common/vbi-services/nabts_page_test.cpp
     common/vbi-services/nabts_repertoire_test.cpp
     common/vbi-services/teletext_bit_clock_test.cpp

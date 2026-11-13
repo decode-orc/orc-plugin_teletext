@@ -19,17 +19,20 @@ jobs:
       # Pin to a branch or tag only for a deliberate, temporary reason, and
       # restore `main` once it merges.
       # issue-377 until it merges: the functional goldens are recorded
-      # against its VBI Source stage (decode-orc#328's, cherry-picked there).
+      # against its VBI Source stage (decode-orc#328's, cherry-picked there),
+      # and the view SDK tier (orc/view/) is only there.
       ORC_SDK_REF: issue-377
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Every binary must carry the release orc-gui's toolchain tag.
-          # Linux therefore builds inside org.kde.Sdk//6.9, the SDK decode-orc's
-          # Flatpak is built with (GCC 14): a Nix build (GCC 15) does not load
-          # there. macOS (AppleClang 21 vs Nix clang 21) and Windows (MSVC)
-          # already match their release orc-gui.
+          # Every binary must carry the release orc-gui's toolchain tag, and
+          # the view binary must be built against the view Qt baseline (see
+          # decode-orc's plugin-sdk.md). Linux therefore builds inside
+          # org.kde.Sdk//6.9, the SDK decode-orc's Flatpak is built with
+          # (GCC 14, Qt 6.9): a Nix build (GCC 15) does not load there. macOS
+          # (AppleClang 21 vs Nix clang 21) and Windows (MSVC) already match
+          # their release orc-gui, and install Qt 6.9 for the view.
           - os: ubuntu-latest
             platform: linux
             use_nix: false
@@ -39,10 +42,14 @@ jobs:
             platform: macos
             use_nix: true
             build_dir: build
+            qt_host: mac
+            qt_arch: clang_64
           - os: windows-latest
             platform: windows
             use_nix: false
             build_dir: build
+            qt_host: windows
+            qt_arch: win64_msvc2022_64
 
     steps:
       - name: Checkout plugin
@@ -73,20 +80,41 @@ jobs:
           sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.kde.Platform//6.9 org.kde.Sdk//6.9
 
-      # Configure, build and run the unit and functional tests in one go,
-      # inside the SDK. The functional tests skip: the captures are not here.
+      # Configure, build and run the unit, view and functional tests in one
+      # go, inside the SDK (which has Qt 6.9). The functional tests skip: the
+      # captures are not here.
       - name: Build and test (KDE SDK)
         if: matrix.use_kde_sdk
         run: |
           chmod +x scripts/build_in_kde_sdk.sh
           ./scripts/build_in_kde_sdk.sh "$ORC_SDK_DIR" build-kde-sdk
 
+      # The view links Qt Widgets, built against the view Qt baseline (6.9):
+      # orc-gui refuses a view built for a newer Qt minor than its own.
+      - name: Install Qt (view baseline)
+        if: matrix.qt_host
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
+        with:
+          version: '6.9.*'
+          host: ${{ matrix.qt_host }}
+          target: 'desktop'
+          arch: ${{ matrix.qt_arch }}
+
       - name: Configure (Nix)
         if: matrix.use_nix
+        shell: bash
         run: |
-          nix develop --accept-flake-config --command \
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-              -DORC_INTREE_SDK_DIR="$ORC_SDK_DIR" -DBUILD_TESTS=ON
+          args="-DCMAKE_BUILD_TYPE=Release -DORC_INTREE_SDK_DIR=$ORC_SDK_DIR -DBUILD_TESTS=ON"
+          # Point CMake at the baseline Qt rather than the devshell's newer
+          # one. Qt6_DIR alone is not enough: Qt's config finds its tool
+          # packages through the prefix path, where the devshell's Qt would
+          # otherwise come first and mix two Qt versions.
+          if [ -n "${QT_ROOT_DIR:-}" ]; then
+            args="$args -DQt6_DIR=$QT_ROOT_DIR/lib/cmake/Qt6 -DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
+          fi
+          nix develop --accept-flake-config --command bash -c \
+            'export CMAKE_PREFIX_PATH="${QT_ROOT_DIR:+$QT_ROOT_DIR:}${CMAKE_PREFIX_PATH:-}"; cmake -S . -B build "$@"' \
+            configure $args
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -99,6 +127,7 @@ jobs:
           -DORC_INTREE_SDK_DIR=${{ env.ORC_SDK_DIR }}
           -DBUILD_TESTS=ON
           -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DQt6_DIR=${{ env.QT_ROOT_DIR }}/lib/cmake/Qt6
 
       - name: Build (Nix)
         if: matrix.use_nix
@@ -115,6 +144,14 @@ jobs:
       - name: Unit tests (native)
         if: ${{ !matrix.use_nix && !matrix.use_kde_sdk }}
         run: ctest --test-dir build --output-on-failure -C Release -L unit
+
+      - name: View tests (Nix)
+        if: matrix.use_nix
+        run: nix develop --accept-flake-config --command ctest --test-dir build --output-on-failure -C Release -L view
+
+      - name: View tests (native)
+        if: ${{ !matrix.use_nix && !matrix.use_kde_sdk }}
+        run: ctest --test-dir build --output-on-failure -C Release -L view
 
       - name: Functional tests (Nix)
         if: matrix.use_nix
@@ -199,4 +236,5 @@ jobs:
         with:
           files: |
             artifacts/**/orc-plugin_teletext_*
+            artifacts/**/orc-view_teletext_*
             orc-plugin-manifest.yaml

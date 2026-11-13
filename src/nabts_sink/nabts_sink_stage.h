@@ -16,7 +16,7 @@
 #include <orc/plugin/orc_stage_tooling.h>
 #include <orc/stage/node_type.h>
 #include <orc/stage/params/stage_parameter.h>
-#include <orc/stage/tooling/catalogue_results.h>
+#include <orc/stage/tooling/stage_tool_requests.h>
 #include <orc/stage/triggerable_stage.h>
 #include <orc/stage/video_frame_representation.h>
 
@@ -29,9 +29,11 @@
 #include <utility>
 #include <vector>
 
+#include "catalogue/catalogue_model.h"
+#include "catalogue/catalogue_wire.h"
+#include "common/stage_instructions_file.h"
 #include "nabts_catalogue_view.h"
 #include "nabts_sink_deps_interface.h"
-#include "common/stage_instructions_file.h"
 #include "vbi-services/vbi_analysis_results.h"
 
 namespace orc {
@@ -67,7 +69,7 @@ inline constexpr NaplpsRenderMode kDefaultRenderMode =
  *
  * The packets are also reassembled into data groups (§4) and teletext records
  * (§5) as the pass goes, and the records the range carried are catalogued for
- * the host to browse through ICatalogueResults.
+ * the plugin's view binary to browse.
  *
  * Separate from the Teletext Sink because the two services share nothing above
  * the packet — see docs-tech/nabts-support-design.md §2.
@@ -81,7 +83,7 @@ class NabtsSinkStage : public DAGStage,
                        public TriggerableStage,
                        public StageToolProvider,
                        public IStagePreviewCapability,
-                       public ICatalogueResults {
+                       public IStageToolRequestHandler {
  public:
   explicit NabtsSinkStage(IStageServices* stage_services);
   ~NabtsSinkStage() override = default;
@@ -140,18 +142,18 @@ class NabtsSinkStage : public DAGStage,
   void cancel_trigger() override { cancel_requested_.store(true); }
 
   /// Whether the last trigger left a catalogue behind
-  bool has_results() const override { return has_results_.load(); }
+  bool has_results() const { return has_results_.load(); }
 
-  /// The raw catalogue the last trigger built. Plugin-private: the host reads
-  /// the stage through ICatalogueResults and never sees this type. Kept public
-  /// for the stage's own tests, which compile against these sources.
+  /// The raw catalogue the last trigger built. Plugin-private: the view is
+  /// sent the catalogue built from it, never this type. Kept public for the
+  /// stage's own tests, which compile against these sources.
   const NabtsAnalysisDataset& dataset() const { return dataset_; }
 
-  // ICatalogueResults interface. Running every record's presentation code into
-  // a display list costs real work and memory, and a run that only exports a
-  // packet stream never needs it, so it is built on first ask and cached.
-  // Called from the host's render worker, hence the lock.
-  const CatalogueDataset& catalogue() const override {
+  // The catalogue the view shows. Running every record's presentation code
+  // into a display list costs real work and memory, and a run that only
+  // exports a packet stream never needs it, so it is built on first ask and
+  // cached. Asked for from the host's render worker, hence the lock.
+  const CatalogueDataset& catalogue() const {
     return catalogue_for(std::string());
   }
 
@@ -159,8 +161,7 @@ class NabtsSinkStage : public DAGStage,
   // rather than the one the project's parameter names. Only the display lists
   // differ, so this rebuilds the catalogue and nothing above it: the records
   // themselves were recovered once and are not read again.
-  const CatalogueDataset& catalogue(
-      const std::string& view_option) const override {
+  const CatalogueDataset& catalogue(const std::string& view_option) const {
     return catalogue_for(view_option);
   }
 
@@ -171,16 +172,47 @@ class NabtsSinkStage : public DAGStage,
   // untouched by this.
   const CatalogueDataset& catalogue(
       const std::string& view_option,
-      const std::vector<std::string>& active_toggles) const override {
+      const std::vector<std::string>& active_toggles) const {
+    std::lock_guard<std::mutex> lock(catalogue_mutex_);
+    return catalogue_with_toggles_locked(view_option, active_toggles);
+  }
+
+  // A page that links keys to its macros, played: presented as the catalogue
+  // presents it under the reader's options, then each key pressed on it since
+  // it was shown. Replayed from the recovered records every time, so the same
+  // keys always give the same page and nothing is held between calls.
+  CataloguePayload played(
+      const std::string& item_id, const std::vector<std::string>& keys,
+      const std::string& view_option,
+      const std::vector<std::string>& active_toggles) const {
     const auto active = [&](const char* id) {
       return std::find(active_toggles.begin(), active_toggles.end(),
                        std::string(id)) != active_toggles.end();
     };
-    return catalogue_for(view_option, active(kNabtsRepairToggleId),
-                         active(kNabtsReconstructToggleId),
-                         active(kNabtsReceiverPaceToggleId),
-                         active(kNabtsTu2000xPaceToggleId));
+    // The lock the catalogue is built under, so the dataset is not replaced by
+    // a trigger while a page of it is being played.
+    std::lock_guard<std::mutex> lock(catalogue_mutex_);
+    return build_nabts_played_payload(
+        dataset_, item_id, keys,
+        naplps_render_mode_from_name(view_option, kDefaultRenderMode),
+        active(kNabtsRepairToggleId), active(kNabtsReconstructToggleId),
+        active(kNabtsReceiverPaceToggleId), active(kNabtsTu2000xPaceToggleId));
   }
+
+  // Everything the last trigger decoded, each kind of data as the files it
+  // is, under @p directory (nabts_export_data()): the records as sent, the
+  // captions as subtitles, the datacasts and the files they carried, the
+  // network services' items. Written by the view's Export All (the export
+  // verb) and by a trigger with export_data on. Under the catalogue's lock,
+  // so a trigger cannot replace the dataset part way through. supported is
+  // false when there are no results to export.
+  CatalogueExportResult export_data(const std::string& directory) const;
+
+  // IStageToolRequestHandler: the catalogue view's requests
+  // (src/catalogue/catalogue_wire.h), on the host's render worker.
+  StageToolReply handle_tool_request(
+      const std::string& contract_id, const std::string& verb,
+      const std::vector<uint8_t>& payload) override;
 
   // IStagePreviewCapability
   StagePreviewCapability get_preview_capability() const override;
@@ -189,7 +221,8 @@ class NabtsSinkStage : public DAGStage,
     return {StageToolDescriptor{
         "nabts_analysis", "NABTS Records",
         "Decode the NABTS service and browse the records it carried.",
-        StageToolKind::CatalogueBrowser, false, kCatalogueBrowserContractId}};
+        StageToolKind::PluginView, true,
+        teletext_wire::kCatalogueViewContractId}};
   }
 
  private:
@@ -205,6 +238,29 @@ class NabtsSinkStage : public DAGStage,
                                         bool receiver_pace = false,
                                         bool tu2000x_pace = false) const {
     std::lock_guard<std::mutex> lock(catalogue_mutex_);
+    return catalogue_for_locked(view_option, repair, reconstruct, receiver_pace,
+                                tu2000x_pace);
+  }
+
+  /// catalogue(view_option, active_toggles), with catalogue_mutex_ held.
+  const CatalogueDataset& catalogue_with_toggles_locked(
+      const std::string& view_option,
+      const std::vector<std::string>& active_toggles) const {
+    const auto active = [&](const char* id) {
+      return std::find(active_toggles.begin(), active_toggles.end(),
+                       std::string(id)) != active_toggles.end();
+    };
+    return catalogue_for_locked(view_option, active(kNabtsRepairToggleId),
+                                active(kNabtsReconstructToggleId),
+                                active(kNabtsReceiverPaceToggleId),
+                                active(kNabtsTu2000xPaceToggleId));
+  }
+
+  /// catalogue_for(), with catalogue_mutex_ held.
+  const CatalogueDataset& catalogue_for_locked(const std::string& view_option,
+                                               bool repair, bool reconstruct,
+                                               bool receiver_pace,
+                                               bool tu2000x_pace) const {
     const NaplpsRenderMode mode =
         naplps_render_mode_from_name(view_option, kDefaultRenderMode);
     const NaplpsReceiverPace pace =

@@ -55,10 +55,20 @@ record decoding). Both stages moved here from decode-orc core (issue #377);
 - Do not declare a menu/sink category. `NodeTypeInfo` has no `menu_category`
   or `sink_category`; the Add Stage group is derived from `NodeType` by
   `orc::stage_category_for()` and read back via `NodeTypeInfo::category()`.
-- A stage that wants to hand the host a browsable set of items implements
-  `ICatalogueResults` from `<orc/stage/tooling/catalogue_results.h>` and
-  declares `StageToolKind::CatalogueBrowser` — both stages already do this for
-  their page/record catalogues.
+- The page/record browser is this repository's view binary
+  (`view/`, `orc-view_teletext`), not host code. Both stages declare a
+  `StageToolKind::PluginView` tool under
+  `teletext_wire::kCatalogueViewContractId` and answer the view through
+  `IStageToolRequestHandler`; the catalogue crosses as bytes
+  (`src/catalogue/catalogue_wire.h`). Never use decode-orc's
+  `<orc/stage/tooling/catalogue_results.h>` or `CatalogueBrowser`: the host
+  browser is being removed (issue #377 Phase 7).
+- `src/catalogue/` is shared by the stage and the view and depends on neither
+  the SDK nor Qt. Change a field there and you must change
+  `catalogue_wire.cpp` and bump `kCatalogueWireVersion`; the round-trip test
+  sets every field and catches a forgotten one only if you add it there too.
+- `view/` includes only `<orc/view/...>` from the SDK, plus Qt Core, Gui and
+  Widgets. No stage header, no other Qt module.
 
 ## Test Rules
 - `tests/unit/` (ctest label `unit`): stage classes and `orc-vbi-services`
@@ -78,8 +88,8 @@ record decoding). Both stages moved here from decode-orc core (issue #377);
   (`ORC_TELETEXT_TEST_DATA_DIR`); tests `GTEST_SKIP()` without them. Never add
   a decode-orc `orc/core` header to these tests: `support/sha256_hash.*`
   replaces the host's private one.
-- `tests/view/` covers the catalogue viewer GUI; it is not built until the
-  viewer becomes a view plugin (tracked separately).
+- `tests/view/` (ctest label `view`): the view binary's widgets, offscreen
+  (`QT_QPA_PLATFORM=offscreen`). Built only when Qt 6 Widgets is found.
 
 ## Release Manifest Rules
 - Every release must publish `orc-plugin-manifest.yaml`. A release without a

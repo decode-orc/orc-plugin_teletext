@@ -78,7 +78,7 @@ Which pages are sequences is otherwise invisible in the list, so the page's row 
 
 A page's content can also change *during* the recording — a news page rewritten, a score updated. Each version is catalogued on its own, combined only from its own transmissions (see `squash_repeated_rows` below), so the pages the service replaced are kept rather than overwritten by whatever was on air last. A page that changed is marked in the list with how many versions it went through ("3 versions"), its tooltip gives the frames each version was on air, and its versions follow each other in the stepper under the page display, oldest first, labelled with their sub-code and version — `0000, version 2 of 3`. The status line under the display describes the version on screen. A subtitle page replaces its content with every caption, so the versions one sub-page keeps are bounded; the oldest go first, and the tooltip says how many were not kept.
 
-Characters a page's packets X/26 placed are drawn where they were placed, and the page's status line counts them. The pages a packet X/27/0 links to are decoded but not offered as keys in this version of the viewer.
+A page whose packet X/27/0 named pages to go to offers them under the display. Each of its keys gets a button — **Red**, **Green**, **Yellow**, **Cyan** and **Index** — whose tooltip names the page it leads to. A link leads only to a page the recording carried. Characters a page's packets X/26 placed are drawn where they were placed, and the page's status line counts them.
 
 After the pages the list holds the data the service sent outside them. An **8/30** entry says what the broadcast service data packets gave. A **Data** entry for each independent data line, named by its channel and address (`Data 9-2A`), and for each application of a data page, named by page, stream and application (`Data 1F0-s1-a3`), gives how it decoded and shows its payload: as text where nearly all of it is text, and as a hexadecimal dump otherwise (the first 64 KiB of it).
 
@@ -88,12 +88,14 @@ After the pages the list holds the data the service sent outside them. An **8/30
 
 **Save All PNGs…** writes every page and sub-page of the catalogue in one pass, into a folder chosen once. Each image is exactly what **Save PNG…** would have written with that display on screen — the same size, flashing held lit, **Show data errors** honoured — under the same name, so a whole carousel lands as `Page-100-0001.png`, `Page-100-0002.png`, and so on. A service can carry hundreds of pages, so a progress dialogue says how far the batch has got and cancelling it keeps what was already written. The button stands whenever the catalogue holds anything drawn, whatever happens to be on screen.
 
+**Export All…** writes everything the run found into a folder chosen once. Under `views/` is what the viewer shows: every page and sub-page as **Save PNG…** writes it, every listing as text, and an `index.tsv` of what the list says of each. Under `data/` is what the stage decoded, written from what the last trigger left — nothing is decoded again: `pages/`, each sub-page as UTF-8 text in a folder per page (`100/100-0001.txt`), a block mosaic as the sextant character it draws, with every version a sub-page's content replaced kept as `100-0001.v1.txt` and on, oldest first, and an `index.tsv` of when each was seen and how many of its rows arrived; `service-data.txt`, what the broadcast service data (packets 8/30) said; `data-lines/`, the payload of each independent data line and data page as it arrived, named as the run's own export names them; and `report.txt` and `README.txt`. When it is done a message says what each part came to.
+
 ## Parameters
 
 ### output_path (file path)
 Path to the output packet stream. The service's extension is appended if absent: `.t42` on a 625-line source, `.t34` on a 525-line one.
 
-Optional. Leave it empty and the run decodes exactly as it would but writes no file, which is what to do when the pages themselves are what you are after — the **Teletext Pages** tool is filled either way. `write_report` and `export_subtitles` both write beside the packet stream, so they need a path and the run is refused if either is enabled without one.
+Optional. Leave it empty and the run decodes exactly as it would but writes no file, which is what to do when the pages themselves are what you are after — the **Teletext Pages** tool is filled either way. `write_report`, `export_data` and `export_subtitles` write beside the packet stream, so they need a path and the run is refused if any of them is enabled without one.
 
 ### first_vbi_line (integer)
 First candidate field line probed for teletext, 1-based and applied to both fields. Default: `6` on a 625-line project, `10` on a 525-line one. The 625-line default window 6–22 covers broadcast lines 6–22 (field 1) and 318–335 (field 2) permitted to carry teletext by ETSI EN 300 706; the 525-line window 10–20 covers broadcast lines 10–20 and 273–283, the lines ITU-R BT.653 §2 allows short of line 21, the caption line (47 CFR 73.682(a)(22)).
@@ -224,6 +226,9 @@ Teletext squashing: 264 row packets over 1 page run; 246 rewritten (93.2%),
 ```
 
 The copies-per-row line is what separates a run that could not correct anything from one that had nothing to correct: a row transmitted once cannot be improved however good the vote is.
+
+### export_data (boolean)
+Write everything the run decoded into a folder beside the packet stream, named after it with `.export` — `mydata.t42` gives `mydata.t42.export`, `mydata.t34` gives `mydata.t34.export`. It holds what **Export All…** writes under `data/` (see above): the pages as text with every version kept, the broadcast service data, the data lines' payloads, the report and a README. It is written from the run just finished, so nothing is decoded twice, and it is how `orc-cli` gets the export, since the viewer is a GUI window. Needs `output_path` set. Default: `false`.
 
 ### export_subtitles (boolean)
 Decode the subtitle page alongside the packet export and write timed subtitle cues to a `.srt` file next to the output (same name, `.srt` extension), which is why `output_path` must be set. A subtitle is displayed when the page arrives, replaced when its text changes, and cleared when the page is erased or loses its subtitle flag. Default: `false`. Offered on 625-line projects only.

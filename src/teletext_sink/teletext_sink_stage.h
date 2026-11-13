@@ -16,7 +16,7 @@
 #include <orc/plugin/orc_stage_tooling.h>
 #include <orc/stage/node_type.h>
 #include <orc/stage/params/stage_parameter.h>
-#include <orc/stage/tooling/catalogue_results.h>
+#include <orc/stage/tooling/stage_tool_requests.h>
 #include <orc/stage/triggerable_stage.h>
 #include <orc/stage/video_frame_representation.h>
 
@@ -28,9 +28,11 @@
 #include <utility>
 #include <vector>
 
+#include "catalogue/catalogue_model.h"
+#include "catalogue/catalogue_wire.h"
+#include "common/stage_instructions_file.h"
 #include "teletext_catalogue_view.h"
 #include "teletext_sink_deps_interface.h"
-#include "common/stage_instructions_file.h"
 #include "vbi-services/vbi_analysis_results.h"
 
 namespace orc {
@@ -47,21 +49,20 @@ class IStageServices;
  * for the 34-byte 525-line one (BT.653 Table 1b).
  *
  * The same pass builds a catalogue of every page the range carried, which the
- * host reads through ICatalogueResults and presents as the stage's
- * batch-analysis tool.
+ * plugin's view binary shows when the stage's Teletext Pages tool is opened.
  *
  * This is a SINK stage - it has inputs but no outputs. All work happens in
  * trigger(); execute() only caches the input. It is a sink rather than an
  * analysis sink because writing the packet stream is the product; the page
- * catalogue is a by-product of the same pass, offered through a batch-analysis
- * stage tool, which any stage may declare regardless of its node type.
+ * catalogue is a by-product of the same pass, offered through a stage tool,
+ * which any stage may declare regardless of its node type.
  */
 class TeletextSinkStage : public DAGStage,
                           public ParameterizedStage,
                           public TriggerableStage,
                           public StageToolProvider,
                           public IStagePreviewCapability,
-                          public ICatalogueResults {
+                          public IStageToolRequestHandler {
  public:
   explicit TeletextSinkStage(IStageServices* stage_services);
   ~TeletextSinkStage() override = default;
@@ -120,25 +121,36 @@ class TeletextSinkStage : public DAGStage,
   void cancel_trigger() override { cancel_requested_.store(true); }
 
   /// Whether the last trigger left a catalogue behind
-  bool has_results() const override { return has_results_.load(); }
+  bool has_results() const { return has_results_.load(); }
 
-  /// The raw catalogue the last trigger built. Plugin-private: the host reads
-  /// the stage through ICatalogueResults and never sees this type. Kept public
-  /// for the stage's own tests, which compile against these sources.
+  /// The raw catalogue the last trigger built. Plugin-private: the view is
+  /// sent the catalogue built from it, never this type. Kept public for the
+  /// stage's own tests, which compile against these sources.
   const TeletextAnalysisDataset& dataset() const { return dataset_; }
 
-  // ICatalogueResults interface. Resolving every sub-page into a drawable cell
-  // grid costs real work and memory, and a run that only exports a packet
-  // stream never needs it, so it is built on first ask and cached. Called from
-  // the host's render worker, hence the lock.
-  const CatalogueDataset& catalogue() const override {
+  // The catalogue the view shows. Resolving every sub-page into a drawable
+  // cell grid costs real work and memory, and a run that only exports a packet
+  // stream never needs it, so it is built on first ask and cached. Asked for
+  // from the host's render worker, hence the lock.
+  const CatalogueDataset& catalogue() const {
     std::lock_guard<std::mutex> lock(catalogue_mutex_);
-    if (!catalogue_) {
-      catalogue_ = std::make_unique<CatalogueDataset>(
-          build_teletext_catalogue(dataset_));
-    }
-    return *catalogue_;
+    return catalogue_locked();
   }
+
+  // Everything the last trigger decoded, each kind of data as the files it
+  // is, under @p directory (teletext_export_data()): the pages as text, every
+  // version kept, the broadcast service data and the data lines' payloads.
+  // Written by the view's Export All (the export verb) and by a trigger with
+  // export_data on. Under the catalogue's lock, so a trigger cannot replace
+  // the dataset part way through. supported is false when there are no
+  // results to export.
+  CatalogueExportResult export_data(const std::string& directory) const;
+
+  // IStageToolRequestHandler: the catalogue view's requests
+  // (src/catalogue/catalogue_wire.h), on the host's render worker.
+  StageToolReply handle_tool_request(
+      const std::string& contract_id, const std::string& verb,
+      const std::vector<uint8_t>& payload) override;
 
   // IStagePreviewCapability
   StagePreviewCapability get_preview_capability() const override;
@@ -147,10 +159,20 @@ class TeletextSinkStage : public DAGStage,
     return {StageToolDescriptor{
         "teletext_analysis", "Teletext Pages",
         "Decode the teletext service and browse the pages it carried.",
-        StageToolKind::CatalogueBrowser, false, kCatalogueBrowserContractId}};
+        StageToolKind::PluginView, true,
+        teletext_wire::kCatalogueViewContractId}};
   }
 
  private:
+  /// catalogue(), with catalogue_mutex_ already held.
+  const CatalogueDataset& catalogue_locked() const {
+    if (!catalogue_) {
+      catalogue_ = std::make_unique<CatalogueDataset>(
+          build_teletext_catalogue(dataset_));
+    }
+    return *catalogue_;
+  }
+
   /// Replace the last trigger's results and drop the catalogue built from the
   /// ones before, under the lock catalogue() reads them under, so a reader on
   /// the host's render worker never sees a dataset part way through being

@@ -56,6 +56,25 @@ NabtsPrimitive letter(char character, double x, uint32_t appear_ms) {
   return primitive;
 }
 
+// §5.3.2.8 WAIT: a page that writes a word a letter at a time shows it a letter
+// at a time, so the letters of one run drawn at different moments are
+// separate operations, each with its moment.
+TEST(NabtsCatalogueViewTest, TextDrawnAcrossAPauseIsNotOneRun) {
+  NabtsPageSnapshot snapshot;
+  nabts_default_colour_map(snapshot.colour_map);
+  snapshot.primitives = {letter('A', 0.1, 0), letter('B', 0.1 + 1.0 / 40.0, 0),
+                         letter('C', 0.1 + 2.0 / 40.0, 700)};
+
+  const CatalogueDisplayList list =
+      nabts_page_display_list(snapshot, NaplpsRenderMode::kTwiceVector);
+  ASSERT_EQ(list.ops.size(), 2u);
+  EXPECT_EQ(list.ops[0].text, "AB");
+  EXPECT_EQ(list.ops[0].appear_ms, 0u);
+  EXPECT_EQ(list.ops[1].text, "C");
+  EXPECT_EQ(list.ops[1].appear_ms, 700u);
+  EXPECT_TRUE(list.timed());
+}
+
 /// A non-spacing mark of the supplementary set (column 4) at |x|.
 NabtsPrimitive mark(uint8_t code, double x, uint32_t appear_ms = 0) {
   NabtsPrimitive primitive = letter(static_cast<char>(code), x, appear_ms);
@@ -151,6 +170,80 @@ TEST(NabtsCatalogueViewTest, AMarkWithNoLetterStandsInItsSpacingForm) {
   EXPECT_EQ(elsewhere[0].text, "\u00B4");
   EXPECT_DOUBLE_EQ(elsewhere[0].origin.x, 0.1);
   EXPECT_EQ(elsewhere[1].text, "e");
+}
+
+// What a stage showed stays shown (§5.3.2.8): a mark drawn before a pause
+// stands alone then, and the letter after it is drawn plain when it comes.
+TEST(NabtsCatalogueViewTest, AMarkBeforeAPauseStandsAlone) {
+  const std::vector<CatalogueDrawOp> runs =
+      text_runs({mark(0x42, 0.1), letter('e', 0.1, 700)});
+  ASSERT_EQ(runs.size(), 2u);
+  EXPECT_EQ(runs[0].text, "\u00B4");
+  EXPECT_EQ(runs[0].appear_ms, 0u);
+  EXPECT_EQ(runs[1].text, "e");
+  EXPECT_EQ(runs[1].appear_ms, 700u);
+}
+
+// A clear after a pause blacks out what earlier stages drew; what was drawn and
+// cleared within one instant was never on screen and is left out.
+TEST(NabtsCatalogueViewTest, TheVectorModeReplaysClears) {
+  NabtsPageSnapshot snapshot;
+  nabts_default_colour_map(snapshot.colour_map);
+  snapshot.timeline.superseded = {letter('A', 0.1, 0), letter('B', 0.3, 900)};
+  snapshot.timeline.clears = {NabtsDisplayClear{900, 2}};
+  snapshot.primitives = {letter('C', 0.5, 900)};
+
+  const CatalogueDisplayList list =
+      nabts_page_display_list(snapshot, NaplpsRenderMode::kTwiceVector);
+  ASSERT_EQ(list.ops.size(), 3u);
+  EXPECT_EQ(list.ops[0].text, "A");
+  EXPECT_EQ(list.ops[1].kind, CatalogueDrawKind::kRectangle);
+  EXPECT_TRUE(list.ops[1].filled);
+  EXPECT_EQ(list.ops[1].appear_ms, 900u);
+  EXPECT_EQ(list.ops[1].colour.red, 0);
+  EXPECT_EQ(list.ops[2].text, "C");
+}
+
+// Both emissions carry the palette, and in the vector mode too a colour names
+// its entry only where the entry changes as the page is shown.
+TEST(NabtsCatalogueViewTest, TheVectorModeNamesTheEntriesThatChange) {
+  constexpr NabtsColour kRed{0, 15, 0, false};
+  NabtsPageSnapshot snapshot;
+  nabts_default_colour_map(snapshot.timeline.initial_map);
+  // Entry 3 is loaded with red a second in; the final map has it.
+  nabts_default_colour_map(snapshot.colour_map);
+  snapshot.colour_map[3] = kRed;
+  NabtsPrimitive changing = letter('A', 0.1, 0);
+  changing.colour = kRed;
+  changing.colour_map_address = 3;
+  NabtsPrimitive steady = letter('B', 0.5, 0);
+  steady.colour = snapshot.colour_map[5];
+  steady.colour_map_address = 5;
+  snapshot.primitives = {changing, steady};
+  NabtsPaletteEvent write;
+  write.kind = NabtsPaletteEvent::Kind::kMapWrite;
+  write.time_ms = 1000;
+  write.address = 3;
+  write.colour = kRed;
+  snapshot.timeline.events.push_back(write);
+  snapshot.timeline.end_ms = 1000;
+
+  const CatalogueDisplayList list =
+      nabts_page_display_list(snapshot, NaplpsRenderMode::kTwiceVector);
+  ASSERT_EQ(list.palette.size(), kNabtsColourMapEntries);
+  ASSERT_EQ(list.palette_tracks.size(), kNabtsColourMapEntries);
+  ASSERT_EQ(list.ops.size(), 2u);
+  // The still colour is the final one, and the entry is named.
+  EXPECT_EQ(list.ops[0].colour.red, 255);
+  EXPECT_EQ(list.ops[0].colour.palette_index, 3);
+  EXPECT_EQ(list.ops[1].colour.palette_index, -1);
+  // Grey level 3 of the default map (6 of 15) until the write, red after it.
+  const CataloguePaletteTrack& track = list.palette_tracks[3];
+  EXPECT_EQ(track.colour_at(0, list.palette[3]).red, 6 * 255 / 15);
+  EXPECT_EQ(track.colour_at(1000, list.palette[3]).red, 255);
+  EXPECT_EQ(track.next_change_after(0), 1000u);
+  EXPECT_EQ(track.next_change_after(1000), kCatalogueNever);
+  EXPECT_TRUE(list.palette_tracks[5].steps.empty());
 }
 
 // §5.3.3.6.3: INCREMENTAL POINT arrives a row at a time, and each row is a
@@ -1748,13 +1841,87 @@ TEST(NabtsCatalogueViewTest, TheCatalogueOffersTheReconstructionToggle) {
   const CatalogueDataset on = build_nabts_catalogue(
       datasetWithLostStretch().data, NaplpsRenderMode::kReference,
       /*repair=*/false, /*reconstruct=*/true);
-  ASSERT_EQ(on.schema.toggles.size(), 2u);
-  ASSERT_EQ(off.schema.toggles.size(), 2u);
+  ASSERT_EQ(on.schema.toggles.size(), 4u);
+  ASSERT_EQ(off.schema.toggles.size(), 4u);
   EXPECT_EQ(on.schema.toggles.front().id, kNabtsReconstructToggleId);
   EXPECT_TRUE(on.schema.toggles.front().active);
   EXPECT_FALSE(off.schema.toggles.front().active);
   EXPECT_FALSE(on.schema.toggles.front().label.empty());
   EXPECT_FALSE(on.schema.toggles.front().tooltip.empty());
+}
+
+// The receiver's pace is offered beside it, and moves when a page's figures
+// appear without changing what they are: the same ops, later.
+TEST(NabtsCatalogueViewTest, ReceiverPaceDelaysTheFiguresAndDrawsTheSame) {
+  const NabtsAnalysisDataset data = datasetWithLostStretch().data;
+  const CatalogueDataset still = build_nabts_catalogue(
+      data, NaplpsRenderMode::kTwiceVector,
+      /*repair=*/false, /*reconstruct=*/false, /*receiver_pace=*/false);
+  const CatalogueDataset paced = build_nabts_catalogue(
+      data, NaplpsRenderMode::kTwiceVector,
+      /*repair=*/false, /*reconstruct=*/false, /*receiver_pace=*/true);
+  ASSERT_EQ(paced.schema.toggles.size(), 4u);
+  EXPECT_EQ(paced.schema.toggles[2].id, kNabtsReceiverPaceToggleId);
+  EXPECT_TRUE(paced.schema.toggles[2].active);
+  EXPECT_FALSE(still.schema.toggles[2].active);
+  EXPECT_FALSE(paced.schema.toggles[2].tooltip.empty());
+
+  ASSERT_EQ(still.payloads.size(), paced.payloads.size());
+  bool later = false;
+  for (size_t i = 0; i < still.payloads.size(); ++i) {
+    const auto& a = still.payloads[i].display_list.ops;
+    const auto& b = paced.payloads[i].display_list.ops;
+    ASSERT_EQ(a.size(), b.size());
+    for (size_t j = 0; j < a.size(); ++j) {
+      EXPECT_EQ(a[j].kind, b[j].kind);
+      EXPECT_EQ(a[j].points.size(), b[j].points.size());
+      EXPECT_LE(a[j].appear_ms, b[j].appear_ms);
+      later = later || b[j].appear_ms > a[j].appear_ms;
+    }
+  }
+  EXPECT_TRUE(later);
+}
+
+// The TU-2000x's pace is offered as a third box, and plays whether or not
+// Receiver pace is ticked: every combination of the two means one receiver,
+// and each box reports the state it was asked for.
+TEST(NabtsCatalogueViewTest, TheTu2000xPaceIsOfferedBesideReceiverPace) {
+  const NabtsAnalysisDataset data = datasetWithLostStretch().data;
+  const CatalogueDataset tu = build_nabts_catalogue(
+      data, NaplpsRenderMode::kTwiceVector,
+      /*repair=*/false, /*reconstruct=*/false, /*receiver_pace=*/false,
+      /*tu2000x_pace=*/true);
+  ASSERT_EQ(tu.schema.toggles.size(), 4u);
+  EXPECT_EQ(tu.schema.toggles[3].id, kNabtsTu2000xPaceToggleId);
+  EXPECT_TRUE(tu.schema.toggles[3].active);
+  EXPECT_FALSE(tu.schema.toggles[2].active);
+  EXPECT_FALSE(tu.schema.toggles[3].label.empty());
+  EXPECT_FALSE(tu.schema.toggles[3].tooltip.empty());
+
+  EXPECT_EQ(naplps_receiver_pace_for(false, false), NaplpsReceiverPace::kOff);
+  EXPECT_EQ(naplps_receiver_pace_for(true, false),
+            NaplpsReceiverPace::kNorpakTtx650);
+  EXPECT_EQ(naplps_receiver_pace_for(false, true),
+            NaplpsReceiverPace::kPanasonicTu2000x);
+  EXPECT_EQ(naplps_receiver_pace_for(true, true),
+            NaplpsReceiverPace::kPanasonicTu2000x);
+
+  // The two paces time the same page differently, and draw the same.
+  const CatalogueDataset ttx = build_nabts_catalogue(
+      data, NaplpsRenderMode::kTwiceVector,
+      /*repair=*/false, /*reconstruct=*/false, /*receiver_pace=*/true);
+  ASSERT_EQ(tu.payloads.size(), ttx.payloads.size());
+  bool differs = false;
+  for (size_t i = 0; i < tu.payloads.size(); ++i) {
+    const auto& a = ttx.payloads[i].display_list.ops;
+    const auto& b = tu.payloads[i].display_list.ops;
+    ASSERT_EQ(a.size(), b.size());
+    for (size_t j = 0; j < a.size(); ++j) {
+      EXPECT_EQ(a[j].kind, b[j].kind);
+      differs = differs || a[j].appear_ms != b[j].appear_ms;
+    }
+  }
+  EXPECT_TRUE(differs);
 }
 
 namespace {
@@ -1838,6 +2005,100 @@ TEST(NabtsCatalogueViewTest, AFigureDrawnAgainInPlaceAtOnceIsListedOnce) {
   snapshot.timeline.end_ms = 0;
   list = nabts_page_display_list(snapshot, NaplpsRenderMode::kTwiceVector);
   EXPECT_EQ(list.ops.size(), 2u);
+}
+
+// At a receiver's pace a fill is swept onto the screen over the time it took,
+// down its rows on the TU-2000x and up them on the TTX 650; a line and a
+// character appear whole when drawn.
+TEST(NabtsCatalogueViewTest, AFillIsSweptOnTheWayItsReceiverDrewIt) {
+  const CatalogueDisplayList down = nabts_page_display_list(
+      pacedPage(NabtsFillSweep::kTopDown), NaplpsRenderMode::kTwiceVector);
+  ASSERT_EQ(down.ops.size(), 3u);
+  EXPECT_EQ(down.ops[0].appear_ms, 300u);
+  EXPECT_EQ(down.ops[0].reveal_duration_ms, 200u);
+  EXPECT_DOUBLE_EQ(down.ops[0].reveal_from_y, 0.5);
+  EXPECT_DOUBLE_EQ(down.ops[0].reveal_to_y, 0.25);
+  EXPECT_EQ(down.ops[1].reveal_duration_ms, 0u) << "a line appears whole";
+  EXPECT_EQ(down.ops[2].reveal_duration_ms, 0u) << "a character appears whole";
+
+  const CatalogueDisplayList up = nabts_page_display_list(
+      pacedPage(NabtsFillSweep::kBottomUp), NaplpsRenderMode::kTwiceVector);
+  EXPECT_DOUBLE_EQ(up.ops[0].reveal_from_y, 0.25);
+  EXPECT_DOUBLE_EQ(up.ops[0].reveal_to_y, 0.5);
+}
+
+// The pixel modes sweep the runs of the rows the fill changed, together.
+TEST(NabtsCatalogueViewTest, APixelPageSweepsTheRowsAFillChanged) {
+  const CatalogueDisplayList list = nabts_page_display_list(
+      pacedPage(NabtsFillSweep::kTopDown), NaplpsRenderMode::kReference);
+  ASSERT_FALSE(list.ops.empty());
+  size_t swept = 0;
+  double lowest = 1.0;
+  double highest = 0.0;
+  for (const CatalogueDrawOp& op : list.ops) {
+    if (op.appear_ms != 300) {
+      EXPECT_EQ(op.reveal_duration_ms, 0u);
+      continue;
+    }
+    ++swept;
+    EXPECT_EQ(op.reveal_duration_ms, 200u);
+    EXPECT_DOUBLE_EQ(op.reveal_from_y, list.ops.front().reveal_from_y);
+    EXPECT_DOUBLE_EQ(op.reveal_to_y, list.ops.front().reveal_to_y);
+    lowest = std::min(lowest, op.origin.y);
+    highest = std::max(highest, op.origin.y + op.size.dy);
+  }
+  // A run a row: the fill's 64 rows and the row its top edge is in, swept from
+  // the top of the highest to the foot of the lowest.
+  EXPECT_GE(swept, 64u);
+  EXPECT_LE(swept, 66u);
+  EXPECT_DOUBLE_EQ(list.ops.front().reveal_from_y, highest);
+  EXPECT_DOUBLE_EQ(list.ops.front().reveal_to_y, lowest);
+}
+
+// A clear at a receiver's pace sweeps the whole display area.
+TEST(NabtsCatalogueViewTest, AClearSweepsTheWholeDisplay) {
+  NabtsPageSnapshot snapshot;
+  nabts_default_colour_map(snapshot.colour_map);
+  snapshot.timeline.fill_sweep = NabtsFillSweep::kBottomUp;
+  snapshot.timeline.superseded = {letter('A', 0.1, 3)};
+  snapshot.timeline.clears = {NabtsDisplayClear{172, 1, 169}};
+  snapshot.primitives = {letter('B', 0.5, 175)};
+
+  const CatalogueDisplayList list =
+      nabts_page_display_list(snapshot, NaplpsRenderMode::kTwiceVector);
+  ASSERT_EQ(list.ops.size(), 3u);
+  EXPECT_EQ(list.ops[1].kind, CatalogueDrawKind::kRectangle);
+  EXPECT_EQ(list.ops[1].appear_ms, 172u);
+  EXPECT_EQ(list.ops[1].reveal_duration_ms, 169u);
+  EXPECT_DOUBLE_EQ(list.ops[1].reveal_from_y, 0.0);
+  EXPECT_DOUBLE_EQ(list.ops[1].reveal_to_y, kNabtsDisplayAreaHeight);
+
+  const CatalogueDisplayList pixels =
+      nabts_page_display_list(snapshot, NaplpsRenderMode::kReference);
+  bool cleared = false;
+  for (const CatalogueDrawOp& op : pixels.ops) {
+    if (op.appear_ms == 172) {
+      cleared = true;
+      EXPECT_EQ(op.reveal_duration_ms, 169u);
+      EXPECT_DOUBLE_EQ(op.reveal_from_y, 0.0);
+      EXPECT_NEAR(op.reveal_to_y, kNabtsDisplayAreaHeight, 1e-12);
+    }
+  }
+  EXPECT_TRUE(cleared);
+}
+
+// Without a receiver's pace nothing is swept: the lists are as they were.
+TEST(NabtsCatalogueViewTest, WithoutAPaceNothingIsSwept) {
+  const NabtsAnalysisDataset data = datasetWithLostStretch().data;
+  for (const NaplpsRenderMode mode :
+       {NaplpsRenderMode::kReference, NaplpsRenderMode::kTwiceVector}) {
+    const CatalogueDataset still = build_nabts_catalogue(data, mode);
+    for (const CataloguePayload& payload : still.payloads) {
+      for (const CatalogueDrawOp& op : payload.display_list.ops) {
+        EXPECT_EQ(op.reveal_duration_ms, 0u);
+      }
+    }
+  }
 }
 
 // The reference holds the page whole, so the lost stretch comes back from it
@@ -1933,6 +2194,27 @@ std::vector<double> point_xs(const CatalogueDisplayList& list) {
 
 }  // namespace
 
+// A page that links keys says which, so the host can offer them, and a service
+// that has such a page names its keypad.
+TEST(NabtsCatalogueViewTest, APageThatLinksKeysListsThemForTheKeypad) {
+  const CatalogueDataset catalogue = build_nabts_catalogue(
+      datasetWithWalkingPage(), NaplpsRenderMode::kTwiceVector);
+  ASSERT_EQ(catalogue.items.size(), 1u);
+  EXPECT_EQ(catalogue.items[0].keys, (std::vector<std::string>{"7", "9"}));
+  const std::vector<std::string>& badges = catalogue.items[0].badges;
+  EXPECT_NE(std::find(badges.begin(), badges.end(), kNabtsKeypadGameBadge),
+            badges.end());
+  EXPECT_EQ(catalogue.schema.keypad_label, kNabtsKeypadLabel);
+
+  // A page that links none offers none; its catalogue still names the
+  // keypad, whose digits ask for a page by number.
+  const CatalogueDataset plain = build_nabts_catalogue(
+      datasetWithLineRecord(), NaplpsRenderMode::kTwiceVector);
+  ASSERT_FALSE(plain.items.empty());
+  EXPECT_TRUE(plain.items[0].keys.empty());
+  EXPECT_EQ(plain.schema.keypad_label, kNabtsKeypadLabel);
+}
+
 // The page played is the page after every key pressed on it, in order, each
 // starting where the last left the drawing point; no keys is the page as
 // listed, and an id that names no page plays nothing.
@@ -1958,6 +2240,34 @@ TEST(NabtsCatalogueViewTest, APlayedPageIsThePageAfterEveryKeyPressed) {
 
   EXPECT_EQ(build_nabts_played_payload(data, "nothing", {"9"}).kind,
             CataloguePayload::Kind::kNone);
+}
+
+// Every receiver the viewer offers answers a played page, the pixel ones as
+// the pixels they light; and at a receiver's pace the last key's drawing is
+// what plays, what the keys before it drew standing from the start.
+TEST(NabtsCatalogueViewTest, APlayedPageIsDrawnForTheReceiverAndPaceOnShow) {
+  const NabtsAnalysisDataset data = datasetWithWalkingPage();
+  const std::string id =
+      build_nabts_catalogue(data, NaplpsRenderMode::kReference).items[0].id;
+
+  const CataloguePayload pixels =
+      build_nabts_played_payload(data, id, {"9"}, NaplpsRenderMode::kReference);
+  ASSERT_EQ(pixels.kind, CataloguePayload::Kind::kDisplayList);
+  EXPECT_TRUE(pixels.display_list.pixel_aligned);
+  EXPECT_FALSE(pixels.display_list.ops.empty());
+
+  const CataloguePayload paced = build_nabts_played_payload(
+      data, id, {"9", "9"}, NaplpsRenderMode::kTwiceVector,
+      /*repair=*/false, /*reconstruct=*/false, /*receiver_pace=*/true);
+  std::vector<uint32_t> appear;
+  for (const CatalogueDrawOp& op : paced.display_list.ops) {
+    if (op.kind == CatalogueDrawKind::kPoint) {
+      appear.push_back(op.appear_ms);
+    }
+  }
+  ASSERT_EQ(appear.size(), 2u);
+  EXPECT_EQ(appear[0], 0u) << "the first key's point stands from the start";
+  EXPECT_GT(appear[1], 0u) << "the last key's point is drawn at its pace";
 }
 
 namespace {
@@ -2024,7 +2334,40 @@ std::string columnValue(const CatalogueDataset& catalogue,
   return {};
 }
 
+/// Where |item|'s key link labelled |key| leads, or empty.
+std::string linkTarget(const CatalogueItem& item, const std::string& key) {
+  for (const CatalogueLink& link : item.links) {
+    if (link.role == CatalogueLink::Role::kKey && link.label == key) {
+      return link.target_id;
+    }
+  }
+  return {};
+}
+
 }  // namespace
+
+// A viewer reached a page by typing its number, and the Panasonic TU-2000x
+// set what was typed right-aligned at A7 of the long address: three digits for
+// a short address, four for a carousel's long-address pages, the whole nine for
+// a More Record. Each item answers to that number in the find box.
+TEST(NabtsCatalogueViewTest, AnItemAnswersToTheNumberAKeypadTook) {
+  NabtsAnalysisDataset data;
+  data.records = {pageRecord(0x00001200, {"A"}, true),
+                  pageRecord(0x00198500, {"B"}, true),
+                  pageRecord(0x00000201, {"C"}, true)};
+  const CatalogueDataset catalogue =
+      build_nabts_catalogue(data, NaplpsRenderMode::kReference);
+  EXPECT_EQ(catalogue.schema.find_label, "Page:");
+  for (const auto& [id, number] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"000/012 v0", "012"},
+           {"000/000198500 v0", "1985"},
+           {"000/000000201 v0", "000000201"}}) {
+    const CatalogueItem* item = itemWithId(catalogue, id);
+    ASSERT_NE(item, nullptr) << id;
+    EXPECT_EQ(item->find_aliases, (std::vector<std::string>{number})) << id;
+  }
+}
 
 // CEA-516 §5.2.8.2: a page's header extension names the records its NEXT and
 // INDEX keys fetch; where it names none, NEXT took the next page by number and
@@ -2050,6 +2393,10 @@ TEST(NabtsCatalogueViewTest, AKeyLeadsWhereTheHeaderSaysElseByNumber) {
   ASSERT_NE(map, nullptr);
   ASSERT_NE(temperatures, nullptr);
   ASSERT_NE(weather, nullptr);
+  EXPECT_EQ(linkTarget(*map, "NEXT"), "000/013 v0");
+  EXPECT_EQ(linkTarget(*map, "INDEX"), "000/010 v0");
+  EXPECT_EQ(linkTarget(*temperatures, "NEXT"), "000/013 v0");
+  EXPECT_EQ(linkTarget(*temperatures, "INDEX"), "000/000 v0");
   EXPECT_EQ(columnValue(catalogue, *map, "section"), "010");
   EXPECT_EQ(columnValue(catalogue, *weather, "section"), "010");
   EXPECT_EQ(columnValue(catalogue, *temperatures, "section"), "");
@@ -2076,6 +2423,29 @@ TEST(NabtsCatalogueViewTest, AFlaggedIndexHeadsThePagesAfterIt) {
   ASSERT_NE(vitamins, nullptr);
   EXPECT_EQ(columnValue(catalogue, *running, "section"), "001");
   EXPECT_EQ(columnValue(catalogue, *vitamins, "section"), "006");
+  EXPECT_EQ(linkTarget(*running, "INDEX"), "000/001 v0");
+}
+
+// The numbers a page offers — a board's squares, a quiz's answers — are links
+// to the pages of those numbers the recording carried.
+TEST(NabtsCatalogueViewTest, ANumberAPageOffersIsALinkToThatPage) {
+  NabtsAnalysisDataset data;
+  data.records = {pageRecord(0x00015000, {"QUESTION"}, true),
+                  pageRecord(0x00025000, {"QUESTION"}, true),
+                  pageRecord(0x00071100, {"PUZZLE", "150 250 350"}, true)};
+  const CatalogueDataset catalogue =
+      build_nabts_catalogue(data, NaplpsRenderMode::kReference);
+  const CatalogueItem* board = itemWithId(catalogue, "000/711 v0");
+  ASSERT_NE(board, nullptr);
+  std::vector<std::pair<std::string, std::string>> offered;
+  for (const CatalogueLink& link : board->links) {
+    if (link.role == CatalogueLink::Role::kReference) {
+      offered.emplace_back(link.label, link.target_id);
+    }
+  }
+  // 350 was not carried, so it leads nowhere.
+  EXPECT_EQ(offered, (std::vector<std::pair<std::string, std::string>>{
+                         {"150", "000/150 v0"}, {"250", "000/250 v0"}}));
 }
 
 // A page that starts on the screen it was asked from is drawn over the page
@@ -2199,6 +2569,7 @@ TEST(NabtsCatalogueViewTest, TheMasterIndexListPutsAPageInASection) {
   EXPECT_EQ(section("000/000 v0"), "");
   const CatalogueItem* advert = itemWithId(catalogue, "000/007 v0");
   ASSERT_NE(advert, nullptr);
+  EXPECT_EQ(linkTarget(*advert, "INDEX"), "000/000 v0");
   EXPECT_NE(advert->tooltip.find("Master Index's list"), std::string::npos);
 }
 
