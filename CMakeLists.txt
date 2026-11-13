@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(orc-plugin-teletext
-    VERSION 1.0.0
+    VERSION 1.0.1
     DESCRIPTION "Decode-Orc teletext and NABTS stage plugin"
     LANGUAGES CXX
 )

@@ -31,7 +31,7 @@
         # refuse the binary.
         stdenv = pkgs.stdenv;
 
-        version = "1.0.0";
+        version = "1.0.1";
       in {
         packages.default = stdenv.mkDerivation {
           pname = "orc-plugin-teletext";

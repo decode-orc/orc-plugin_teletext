@@ -25,15 +25,24 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Every binary must carry the release orc-gui's toolchain tag.
+          # Linux therefore builds inside org.kde.Sdk//6.9, the SDK decode-orc's
+          # Flatpak is built with (GCC 14): a Nix build (GCC 15) does not load
+          # there. macOS (AppleClang 21 vs Nix clang 21) and Windows (MSVC)
+          # already match their release orc-gui.
           - os: ubuntu-latest
             platform: linux
-            use_nix: true
+            use_nix: false
+            use_kde_sdk: true
+            build_dir: build-kde-sdk/plugin
           - os: macos-latest
             platform: macos
             use_nix: true
+            build_dir: build
           - os: windows-latest
             platform: windows
             use_nix: false
+            build_dir: build
 
     steps:
       - name: Checkout plugin
@@ -56,6 +65,22 @@ jobs:
           chmod +x scripts/check_sdk_boundary.sh
           ./scripts/check_sdk_boundary.sh .
 
+      - name: Install the Flatpak KDE SDK (Linux)
+        if: matrix.use_kde_sdk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.kde.Platform//6.9 org.kde.Sdk//6.9
+
+      # Configure, build and run the unit and functional tests in one go,
+      # inside the SDK. The functional tests skip: the captures are not here.
+      - name: Build and test (KDE SDK)
+        if: matrix.use_kde_sdk
+        run: |
+          chmod +x scripts/build_in_kde_sdk.sh
+          ./scripts/build_in_kde_sdk.sh "$ORC_SDK_DIR" build-kde-sdk
+
       - name: Configure (Nix)
         if: matrix.use_nix
         run: |
@@ -68,7 +93,7 @@ jobs:
         run: vcpkg install fmt:x64-windows spdlog:x64-windows gtest:x64-windows
 
       - name: Configure (native)
-        if: ${{ !matrix.use_nix }}
+        if: ${{ !matrix.use_nix && !matrix.use_kde_sdk }}
         run: >
           cmake -S . -B build
           -DORC_INTREE_SDK_DIR=${{ env.ORC_SDK_DIR }}
@@ -80,7 +105,7 @@ jobs:
         run: nix develop --accept-flake-config --command cmake --build build --config Release --parallel
 
       - name: Build (native)
-        if: ${{ !matrix.use_nix }}
+        if: ${{ !matrix.use_nix && !matrix.use_kde_sdk }}
         run: cmake --build build --config Release --parallel
 
       - name: Unit tests (Nix)
@@ -88,7 +113,7 @@ jobs:
         run: nix develop --accept-flake-config --command ctest --test-dir build --output-on-failure -C Release -L unit
 
       - name: Unit tests (native)
-        if: ${{ !matrix.use_nix }}
+        if: ${{ !matrix.use_nix && !matrix.use_kde_sdk }}
         run: ctest --test-dir build --output-on-failure -C Release -L unit
 
       - name: Functional tests (Nix)
@@ -96,7 +121,7 @@ jobs:
         run: nix develop --accept-flake-config --command ctest --test-dir build --output-on-failure -C Release -L functional
 
       - name: Functional tests (native)
-        if: ${{ !matrix.use_nix }}
+        if: ${{ !matrix.use_nix && !matrix.use_kde_sdk }}
         run: ctest --test-dir build --output-on-failure -C Release -L functional
 
       # Names the asset orc-plugin_teletext_<platform>_abi<N>.<ext> and writes
@@ -106,7 +131,15 @@ jobs:
         shell: bash
         run: |
           chmod +x scripts/package_local.sh
-          ./scripts/package_local.sh build dist
+          if [ "${{ matrix.use_kde_sdk }}" = "true" ]; then
+            # orc-plugin-build-info was built against the SDK's glibc (2.40),
+            # newer than the runner's, so package inside the SDK as well.
+            mkdir -p dist
+            flatpak run --filesystem="$PWD" --command=bash org.kde.Sdk//6.9 \
+              "$PWD/scripts/package_local.sh" "$PWD/${{ matrix.build_dir }}" "$PWD/dist"
+          else
+            ./scripts/package_local.sh ${{ matrix.build_dir }} dist
+          fi
 
       # The real merge only runs on tag builds, so exercise the script on
       # every platform here: a fragment-format or portability regression then

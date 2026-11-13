@@ -221,7 +221,8 @@ binary:
 
 - Unified workflow: `.github/workflows/ci.yml`
   - on push/PR: builds, runs the unit and functional test labels, and
-    packages on Linux and macOS via Nix, plus a native Windows build; also
+    packages on Linux inside the Flatpak KDE SDK, on macOS via Nix, and
+    natively on Windows; also
     builds the flake's own package (`nix build .#default`) against its pinned
     `decode-orc` revision.
   - on tag push (`v*`): runs the same build/test/package matrix, merges the
@@ -232,6 +233,17 @@ binary:
   for a deliberate, temporary reason, and return it to `main` once that branch
   merges. It is on `issue-377` now: the functional goldens are recorded
   against that branch's VBI Source stage.
+
+- Release binaries must carry the toolchain tag of the release `orc-gui`
+  they are for. The Flatpak `orc-gui` is built with GCC 14 in
+  `org.kde.Sdk//6.9`, so the Linux binary is built there too, by
+  `scripts/build_in_kde_sdk.sh <decode-orc-checkout>`. It downloads fmt,
+  spdlog and GoogleTest at fixed digests and runs the tests in the SDK. A Nix
+  build carries GCC 15's tag, which the Flatpak refuses; the Nix devshell is
+  for development against a Nix-built `orc-gui`. To run the functional tests
+  there as well, reconfigure with `-DORC_TELETEXT_TEST_DATA_DIR=<captures>`,
+  and share that folder and anything its symlinks point at with the SDK
+  (`flatpak run --filesystem=...`).
 
 ## Tagging a Release
 
