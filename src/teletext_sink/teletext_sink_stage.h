@@ -30,6 +30,7 @@
 
 #include "teletext_catalogue_view.h"
 #include "teletext_sink_deps_interface.h"
+#include "common/stage_instructions_file.h"
 #include "vbi-services/vbi_analysis_results.h"
 
 namespace orc {
@@ -73,7 +74,7 @@ class TeletextSinkStage : public DAGStage,
 
   // DAGStage interface
   std::string version() const override { return "1.0"; }
-  ORC_STAGE_INSTRUCTIONS_MD
+  ORC_TELETEXT_STAGE_INSTRUCTIONS_MD("teletext_sink")
   NodeTypeInfo get_node_type_info() const override;
 
   std::vector<ArtifactPtr> execute(

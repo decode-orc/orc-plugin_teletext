@@ -181,11 +181,15 @@ class FrameWindow final : public Artifact, public VideoFrameRepresentation {
 // descriptors' defaults so that changing a default cannot silently move the
 // reference.
 //
-// The 625-line reference is the pre-refactor pipeline's own output: the
-// teletext sink this stage was reworked from, driven over the same window
-// through the direct-slice path the rework kept, writes these bytes exactly.
-// The 525-line reference was generated with this stage, since the sink it
-// replaced dropped 34-byte packets rather than exporting them.
+// All four references were re-recorded on 2026-11-13, when this repository
+// took over the stages from decode-orc. They had stood since 2026-08-08 while
+// deliberate changes moved the output: the VBI source's import rework
+// (decode-orc 12903b3b) and issue #272's refusal of copies that do not belong
+// to a row (a569e8ed). The latter raises the share of bytes failing parity in
+// the stream — 781 to 871 of 119 840 display bytes in the 625-line window —
+// because a packet no longer mended by a vote it had no business in is written
+// as received; that is the intended trade, not a regression. Packet and byte
+// counts in the 625-line window are unchanged.
 struct StreamGolden {
   const char* sha256;
   uint64_t bytes;
@@ -198,14 +202,14 @@ constexpr FrameID kPalFirstFrame = 2000;
 constexpr uint64_t kPalFrameCount = 200;
 
 constexpr StreamGolden kPalGolden{
-    "60a83a53e4f13bb345ac8e9a8787432b6ff218f3dd9f184d41049059fbf55b92", 166488,
+    "ed4b03d275b94964b8103945316c13d12396fcdf249be6b0042b4742c25d891a", 166488,
     3964};
 
 // The same window decoded as a user gets it, with the acquisition window
 // pinned and dead lines skipped. Recorded from this stage, since the decode it
 // describes has no pre-refactor equivalent.
 constexpr StreamGolden kPalLearnedGolden{
-    "1470fc74095ea0b35e1f9d36eaf66688b62a7e58cfad47eeaf4932b2fbfa638a", 172074,
+    "7ca22b91360a592dda922338a22bd7f7675ce0a8f2a8c663a0e247b64d84d6ed", 172074,
     4097};
 
 // Pages this window of the capture carries, in the magazine + two hex digits a
@@ -221,13 +225,13 @@ const std::vector<std::string> kPalExpectedPages{"100", "101", "199", "301",
 constexpr uint64_t kNtscFrameCount = 300;
 
 constexpr StreamGolden kNtscGolden{
-    "5406aadba1cedac9b4720233d587f0fbc898b93056645a8d46872abb1d294936", 90168,
-    2652};
+    "c774528292d6f65fd0853ab45dae465a5f0c86b2d996c57e7de671c61c87cfa2", 90236,
+    2654};
 
 // As above: the same window as a user decodes it.
 constexpr StreamGolden kNtscLearnedGolden{
-    "030c2c67cf0e37adcfa790e0780a7fbe3d274d81eac1f2d184e42272d383f996", 90508,
-    2662};
+    "ee4f68fd90bfd1fffdd9b1e8f2b6932f90052767bd307084010610806710fa6e", 90542,
+    2663};
 
 // As above, of the 52 pages this window holds. Page 100 is the service's front
 // page, so a decode that addresses packets correctly always finds it.

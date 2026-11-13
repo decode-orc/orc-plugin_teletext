@@ -29,6 +29,7 @@
 #include "nabts_record.h"
 #include "nabts_record_catalogue.h"
 #include "nabts_sink_stage.h"
+#include "naplps_render_grid.h"
 #include "naplps_state.h"
 #include "sha256_hash.h"
 #include "vbi-services/teletext_slicer.h"
@@ -267,6 +268,14 @@ RecoveryRun recover(const std::string& capture_path,
   run.triggered = stage.trigger({window}, parameters, observations);
   run.status = stage.get_trigger_status();
   run.dataset = stage.dataset();
+
+  // Recovery does not build the pages: what a page looks like depends on the
+  // receiver it is drawn for, so the catalogue interprets the records when it
+  // is browsed (build_nabts_catalogue). Interpret them the way the viewer
+  // first shows them, at the reference receiver and unrepaired, so the
+  // display-list checks below see what a reader sees.
+  nabts_interpret_records(run.dataset.records, kNaplpsGridReference,
+                          /*repair=*/false);
 
   const std::filesystem::path candidate = output_path.string() + ".t33";
   if (std::filesystem::exists(candidate)) {
@@ -554,6 +563,22 @@ TEST_F(NabtsSinkPipelineTest, ExtraVisionCaptureAssemblesTheServicesRecords) {
     }
   }
 
+  // The service uses two data channels — the magazine on 000 and captioning on
+  // A00 — which is what §3.2.3's packet address is for, and is the case that
+  // would break a reassembler keying its groups on anything else. Both are
+  // real: each follows its own continuity sequence (CI + 1 on 69% and 82% of
+  // packets over the full recording; the phantom channels Hamming
+  // mis-correction invents follow 000's instead).
+  std::vector<uint16_t> channels;
+  for (const auto& record : run.dataset.records) {
+    if (channels.empty() || channels.back() != record.channel) {
+      channels.push_back(record.channel);
+    }
+  }
+  EXPECT_EQ(channels, (std::vector<uint16_t>{0x000, 0xA00}))
+      << "records interleaved across the service's two channels should "
+         "catalogue under exactly those two, in ascending order";
+
   // §6.1: a presentation record's data is NAPLPS, which is what Phase 5 reads.
   EXPECT_EQ(presentation_records, run.dataset.records.size())
       << "a record of a type that is neither presentation nor application";
@@ -578,11 +603,17 @@ TEST_F(NabtsSinkPipelineTest, ExtraVisionCaptureAssemblesTheServicesRecords) {
   }
 }
 
-// The NBC service uses two data channels, which is what §3.2.3's packet address
-// is for, and is the case that would break a reassembler keying its groups on
-// anything else. It is also a much weaker recording — VHS at EP speed — so it
-// exercises the loss path rather than the clean one.
-TEST_F(NabtsSinkPipelineTest, NbcCaptureAssemblesRecordsOnTwoDataChannels) {
+// A much weaker recording — VHS at EP speed — so it exercises the loss path
+// rather than the clean one.
+//
+// It was once read as a two-channel service, 000 and 200. Channel 200 is a
+// phantom: 23% of the recording's packets arrive with their first address
+// byte as 0x09 rather than 0x15 — three adjacent bits inverted, the alternating
+// run MLSE leaves on a band-limited tape, landing one bit from digit 2's
+// codeword 0x49 — and those packets continue channel 000's continuity
+// sequence (CI + 1 on 62% of them, exactly 000's own rate) rather than one of
+// their own. Identity attestation folds them back into 000, which is right.
+TEST_F(NabtsSinkPipelineTest, NbcCaptureAssemblesRecordsOverItsLosses) {
   if (!std::filesystem::exists(kNbtsCapture)) {
     GTEST_SKIP() << "NABTS capture not present: " << kNbtsCapture;
   }
@@ -594,18 +625,9 @@ TEST_F(NabtsSinkPipelineTest, NbcCaptureAssemblesRecordsOnTwoDataChannels) {
 
   ASSERT_GT(run.dataset.records.size(), 5u);
 
-  std::vector<uint16_t> channels;
+  // Everything is the one real channel (see above).
   for (const auto& record : run.dataset.records) {
-    if (channels.empty() || channels.back() != record.channel) {
-      channels.push_back(record.channel);
-    }
-  }
-  EXPECT_GT(channels.size(), 1u)
-      << "records on one channel only, so interleaved channels are untested";
-
-  // The catalogue is ordered by channel, so the channels came out ascending.
-  for (size_t i = 1; i < channels.size(); ++i) {
-    EXPECT_LT(channels[i - 1], channels[i]);
+    EXPECT_EQ(record.channel, 0x000) << record.channel_text;
   }
 
   // A recording this marginal loses packets, and a record assembled over a gap
@@ -853,13 +875,16 @@ TEST_F(NabtsSinkPipelineTest, ExtraVisionRecordsDecodeIntoNaplpsDisplayLists) {
     }
 
     // Whatever a record drew, it drew inside the unit screen — §5.3.1 admits no
-    // coordinate outside it, and the decoder clips rather than wrapping.
+    // coordinate outside it, and the decoder clips rather than wrapping. The
+    // bound is the screen's edge, inclusive: a clear is recorded as a filled
+    // rectangle over the whole display area (clear_display), whose far corner
+    // is that edge, x = 1.
     for (const NabtsPrimitive& primitive : record.page.primitives) {
       for (const NabtsPoint& point : primitive.points) {
         EXPECT_GE(point.x, 0.0) << record.channel_text;
-        EXPECT_LT(point.x, 1.0) << record.channel_text;
+        EXPECT_LE(point.x, 1.0) << record.channel_text;
         EXPECT_GE(point.y, 0.0) << record.channel_text;
-        EXPECT_LT(point.y, 1.0) << record.channel_text;
+        EXPECT_LE(point.y, 1.0) << record.channel_text;
       }
     }
 

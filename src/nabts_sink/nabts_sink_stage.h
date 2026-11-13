@@ -31,6 +31,7 @@
 
 #include "nabts_catalogue_view.h"
 #include "nabts_sink_deps_interface.h"
+#include "common/stage_instructions_file.h"
 #include "vbi-services/vbi_analysis_results.h"
 
 namespace orc {
@@ -110,7 +111,7 @@ class NabtsSinkStage : public DAGStage,
 
   // DAGStage interface
   std::string version() const override { return "1.0"; }
-  ORC_STAGE_INSTRUCTIONS_MD
+  ORC_TELETEXT_STAGE_INSTRUCTIONS_MD("nabts_sink")
   NodeTypeInfo get_node_type_info() const override;
 
   std::vector<ArtifactPtr> execute(

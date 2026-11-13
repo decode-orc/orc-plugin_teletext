@@ -1,0 +1,167 @@
+name: CI and Release
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build-test-package:
+    runs-on: ${{ matrix.os }}
+    env:
+      ORC_SDK_DIR: ${{ github.workspace }}/decode-orc
+      # Host SDK the plugin is built against. Tracks `main` (host ABI 20).
+      # Pin to a branch or tag only for a deliberate, temporary reason, and
+      # restore `main` once it merges.
+      ORC_SDK_REF: main
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            use_nix: true
+          - os: macos-latest
+            platform: macos
+            use_nix: true
+          - os: windows-latest
+            platform: windows
+            use_nix: false
+
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Checkout decode-orc host repository
+        uses: actions/checkout@v4
+        with:
+          repository: decode-orc/decode-orc
+          ref: ${{ env.ORC_SDK_REF }}
+          path: decode-orc
+
+      - name: Install Nix
+        if: matrix.use_nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Enforce SDK boundary
+        shell: bash
+        run: |
+          chmod +x scripts/check_sdk_boundary.sh
+          ./scripts/check_sdk_boundary.sh .
+
+      - name: Configure (Nix)
+        if: matrix.use_nix
+        run: |
+          nix develop --accept-flake-config --command \
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+              -DORC_INTREE_SDK_DIR="$ORC_SDK_DIR" -DBUILD_TESTS=ON
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install fmt:x64-windows spdlog:x64-windows gtest:x64-windows
+
+      - name: Configure (native)
+        if: ${{ !matrix.use_nix }}
+        run: >
+          cmake -S . -B build
+          -DORC_INTREE_SDK_DIR=${{ env.ORC_SDK_DIR }}
+          -DBUILD_TESTS=ON
+          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build (Nix)
+        if: matrix.use_nix
+        run: nix develop --accept-flake-config --command cmake --build build --config Release --parallel
+
+      - name: Build (native)
+        if: ${{ !matrix.use_nix }}
+        run: cmake --build build --config Release --parallel
+
+      - name: Unit tests (Nix)
+        if: matrix.use_nix
+        run: nix develop --accept-flake-config --command ctest --test-dir build --output-on-failure -C Release -L unit
+
+      - name: Unit tests (native)
+        if: ${{ !matrix.use_nix }}
+        run: ctest --test-dir build --output-on-failure -C Release -L unit
+
+      - name: Functional tests (Nix)
+        if: matrix.use_nix
+        run: nix develop --accept-flake-config --command ctest --test-dir build --output-on-failure -C Release -L functional
+
+      - name: Functional tests (native)
+        if: ${{ !matrix.use_nix }}
+        run: ctest --test-dir build --output-on-failure -C Release -L functional
+
+      # Names the asset orc-plugin_teletext_<platform>_abi<N>.<ext> and writes
+      # dist/plugin-manifest-<platform>.yaml declaring its platform, host ABI,
+      # toolchain tag and SHA-256: the facts the release manifest is built from.
+      - name: Package artifact and manifest fragment
+        shell: bash
+        run: |
+          chmod +x scripts/package_local.sh
+          ./scripts/package_local.sh build dist
+
+      # The real merge only runs on tag builds, so exercise the script on
+      # every platform here: a fragment-format or portability regression then
+      # fails the PR rather than the release.
+      - name: Check manifest fragment merges
+        shell: bash
+        run: |
+          chmod +x scripts/merge_manifests.sh
+          ./scripts/merge_manifests.sh \
+            "${RUNNER_TEMP}/orc-plugin-manifest.yaml" \
+            dist/plugin-manifest-${{ matrix.platform }}.yaml
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ matrix.platform }}
+          path: dist/*
+
+  # The flake's own package: builds against the decode-orc revision pinned in
+  # flake.lock and runs the unit tests in its check phase.
+  nix-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Build the flake package
+        run: nix build --accept-flake-config -L .#default
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-test-package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # A release without a valid orc-plugin-manifest.yaml cannot be browsed,
+      # installed or updated to, so a failed merge must fail the release
+      # rather than publish binaries nobody can use.
+      - name: Build release manifest
+        run: |
+          chmod +x scripts/merge_manifests.sh
+          ./scripts/merge_manifests.sh orc-plugin-manifest.yaml \
+            artifacts/*/plugin-manifest-*.yaml
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/orc-plugin_teletext_*
+            orc-plugin-manifest.yaml
