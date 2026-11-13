@@ -4152,6 +4152,29 @@ uint8_t teletext_hamming84_encode(uint8_t value) {
                               (p3 << 4) | (d3 << 5) | (p4 << 6) | (d4 << 7));
 }
 
+float teletext_threshold_confidence_on_mlse_scale(float eye_margin) {
+  // Eye margin, and the MLSE margin as often wrong. See the declaration.
+  static constexpr std::array<std::pair<float, float>, 8> kPoints = {{
+      {0.00F, 0.00F},
+      {0.20F, 0.20F},
+      {0.28F, 0.25F},
+      {0.38F, 0.31F},
+      {0.47F, 0.37F},
+      {0.60F, 0.43F},
+      {0.75F, 0.55F},
+      {1.00F, 1.00F},
+  }};
+  const float margin = std::clamp(eye_margin, 0.0F, 1.0F);
+  for (size_t i = 1; i < kPoints.size(); ++i) {
+    if (margin <= kPoints[i].first) {
+      const auto& [x0, y0] = kPoints[i - 1];
+      const auto& [x1, y1] = kPoints[i];
+      return y0 + (margin - x0) * (y1 - y0) / (x1 - x0);
+    }
+  }
+  return 1.0F;
+}
+
 int teletext_reading_check_failures(const TeletextLineResult& reading,
                                     TeletextSystem system,
                                     size_t packet_bytes) {
@@ -4575,12 +4598,25 @@ TeletextLineResult TeletextSlicer::slice(
     }
     return slice_mlse(line, sample_count, nominal_amplitude, window);
   };
+  // Each detector's confidences on the one scale the row vote sums
+  // (teletext_threshold_confidence_on_mlse_scale()). Mapped after kAuto has
+  // judged the eye, which kAutoFallbackEyeMargin measures as the margin itself.
+  const auto detect_on_one_scale = [&](AcquisitionWindow window) {
+    TeletextLineResult attempt = detect_in(window);
+    if (attempt.valid && attempt.has_byte_confidence &&
+        attempt.detector == TeletextDetector::kThreshold) {
+      for (float& confidence : attempt.byte_confidence) {
+        confidence = teletext_threshold_confidence_on_mlse_scale(confidence);
+      }
+    }
+    return attempt;
+  };
   // A parity-coded row's bytes read from a stretch of the line that held no
   // data (kDeadStretchSwingFraction) are not the row's: each is made to fail
   // its odd parity, the coding a byte known damaged carries, and given no
   // confidence, so any copy that arrived outweighs it.
   const auto detect = [&](AcquisitionWindow window) {
-    TeletextLineResult attempt = detect_in(window);
+    TeletextLineResult attempt = detect_on_one_scale(window);
     if (!attempt.valid || !teletext_has_parity_coded_rows(options_.system)) {
       return attempt;
     }

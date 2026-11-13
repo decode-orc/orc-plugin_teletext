@@ -3199,3 +3199,121 @@ TEST(TeletextAutoRetry, KeepsTheRetryOnlyWhenItFailsNoMoreChecks) {
 }
 
 }  // namespace orc
+
+namespace orc {
+namespace tests {
+namespace {
+
+// Byte error rates of each detector, by band of confidence, over synthesized
+// parity-coded rows of |system| swept over noise and channel bandwidth.
+struct ConfidenceBands {
+  static constexpr size_t kBands = 4;
+  // Bands of the one confidence scale: [0, 0.2), [0.2, 0.3), [0.3, 0.45),
+  // [0.45, 1].
+  static size_t band(float c) {
+    return c < 0.2F ? 0 : c < 0.3F ? 1 : c < 0.45F ? 2 : 3;
+  }
+  std::array<std::array<uint64_t, kBands>, 2> bytes{};
+  std::array<std::array<uint64_t, kBands>, 2> wrong{};
+  double rate(int detector, size_t b) const {
+    return bytes[detector][b] == 0
+               ? 0.0
+               : static_cast<double>(wrong[detector][b]) /
+                     static_cast<double>(bytes[detector][b]);
+  }
+};
+
+ConfidenceBands measure_confidence_bands(bool line_525) {
+  ConfidenceBands bands;
+  uint32_t state = 7;
+  const auto next = [&state] {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+  };
+  const size_t packet_bytes =
+      line_525 ? kTeletext525PacketBytes : kTeletextPacketBytes;
+  for (const double cutoff : {0.0, 5.0e6, 4.0e6, 3.5e6, 3.0e6}) {
+    for (const int32_t noise : {0, 20, 40, 60, 80, 100, 130, 160}) {
+      for (uint32_t seed = 1; seed <= 60; ++seed) {
+        std::array<uint8_t, kTeletextPacketBytes> payload{};
+        const auto mrag =
+            make_mrag(1, 1 + static_cast<int>(seed % 24));
+        payload[0] = mrag[0];
+        payload[1] = mrag[1];
+        for (size_t i = 2; i < packet_bytes; ++i) {
+          payload[i] =
+              teletext_odd_parity_encode(static_cast<uint8_t>(next() & 0x7F));
+        }
+        TeletextLineSynthOptions synth = line_525 ? ntsc_wst_synth_options()
+                                                  : TeletextLineSynthOptions{};
+        synth.low_pass_cutoff_hz = cutoff;
+        synth.noise_amplitude = noise;
+        synth.noise_seed = seed * 7919u + static_cast<uint32_t>(noise);
+        synth.phase_offset_samples = 0.25 * static_cast<double>(seed % 10);
+        const auto line = synthesize_teletext_line(payload, synth, packet_bytes);
+        for (int detector = 0; detector < 2; ++detector) {
+          TeletextSlicerOptions options;
+          options.detector = detector == 0 ? TeletextDetector::kThreshold
+                                           : TeletextDetector::kMlse;
+          const TeletextLineResult result =
+              line_525 ? slice_ntsc_line(line, options)
+                       : slice_line(line, options);
+          if (!result.valid || !result.has_byte_confidence ||
+              result.bytes[0] != payload[0] || result.bytes[1] != payload[1]) {
+            continue;
+          }
+          for (size_t i = 2; i < packet_bytes; ++i) {
+            const size_t b = ConfidenceBands::band(result.byte_confidence[i]);
+            ++bands.bytes[detector][b];
+            bands.wrong[detector][b] += result.bytes[i] != payload[i] ? 1 : 0;
+          }
+        }
+      }
+    }
+  }
+  return bands;
+}
+
+}  // namespace
+
+// The row squasher sums byte confidences over copies read by either detector,
+// so a confidence has to mean the same chance of the byte being right from
+// both (review item 2 on decode-orc#328). Over the same synthesized rows, a
+// band of the one scale holds bytes each detector gets wrong about as often.
+// Read as raw eye margins the threshold detector's bytes in 0.3-0.45 were
+// wrong 3.6 to 3.7 times as often as the MLSE detector's, and 2.5 to 6.5
+// times above that; mapped, 1.0 to 1.3 times and 2.5 times.
+TEST(TeletextConfidenceScale, BothDetectorsReportOnOneScale) {
+  for (const bool line_525 : {false, true}) {
+    const ConfidenceBands bands = measure_confidence_bands(line_525);
+    for (size_t b = 1; b <= 2; ++b) {
+      ASSERT_GT(bands.bytes[0][b], 1000u) << b;
+      ASSERT_GT(bands.bytes[1][b], 1000u) << b;
+      const double ratio = bands.rate(0, b) / bands.rate(1, b);
+      EXPECT_GT(ratio, 0.5) << (line_525 ? "525" : "625") << " band " << b;
+      EXPECT_LT(ratio, 2.0) << (line_525 ? "525" : "625") << " band " << b;
+    }
+    // Above 0.45 both are all but always right.
+    EXPECT_LT(bands.rate(0, 3), 0.0005) << (line_525 ? "525" : "625");
+    EXPECT_LT(bands.rate(1, 3), 0.0005) << (line_525 ? "525" : "625");
+  }
+}
+
+TEST(TeletextConfidenceScale, TheMappingKeepsOrderAndEnds) {
+  EXPECT_FLOAT_EQ(teletext_threshold_confidence_on_mlse_scale(0.0F), 0.0F);
+  EXPECT_FLOAT_EQ(teletext_threshold_confidence_on_mlse_scale(1.0F), 1.0F);
+  // kAuto judges the eye at 0.15, where the two scales agree.
+  EXPECT_FLOAT_EQ(teletext_threshold_confidence_on_mlse_scale(0.15F), 0.15F);
+  float previous = -1.0F;
+  for (int i = 0; i <= 100; ++i) {
+    const float mapped =
+        teletext_threshold_confidence_on_mlse_scale(static_cast<float>(i) / 100);
+    EXPECT_GT(mapped, previous) << i;
+    previous = mapped;
+  }
+}
+
+}  // namespace tests
+}  // namespace orc

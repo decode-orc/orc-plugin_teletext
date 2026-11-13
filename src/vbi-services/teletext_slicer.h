@@ -510,9 +510,14 @@ struct TeletextLineResult {
   // line whose channel refit was singular.
   bool has_byte_confidence = false;
 
-  // How sure the detector was of each of the 42 bytes, 0 … 1.
+  // How sure the detector was of each of the 42 bytes, 0 … 1, on one scale
+  // whichever detector read the line: the MLSE detector's, described below,
+  // onto which the threshold detector's eye margin is mapped
+  // (teletext_threshold_confidence_on_mlse_scale()). The row squasher sums
+  // these across copies read by either detector, so a value has to mean the
+  // same chance of the byte being right from both.
   //
-  // The threshold detector reports the eye margin: how far the least certain
+  // The threshold detector measures the eye margin: how far the least certain
   // of a byte's eight bit-centre samples sits from the slicing threshold, as a
   // fraction of half the recovered amplitude.
   //
@@ -573,6 +578,17 @@ struct TeletextLineResult {
   // byte for its parity is not to believe these for it.
   uint64_t wide_bytes = 0;
 };
+
+// A threshold reading's eye margin (0 … 1) on the MLSE detector's
+// path-metric scale (TeletextLineResult::byte_confidence): the MLSE margin at
+// which an MLSE byte is as often wrong as a threshold byte with this eye
+// margin. Measured on synthesized 625- and 525-line rows over a sweep of noise
+// and channel bandwidth, where every byte's true value is known: the two
+// agree up to 0.2, and above it a threshold byte is as sure as an MLSE byte
+// with a smaller margin (0.47 against 0.37: a byte in five hundred wrong).
+// Piecewise linear and increasing, so it keeps the order of a packet's bytes;
+// 0 and 1 map to themselves.
+float teletext_threshold_confidence_on_mlse_scale(float eye_margin);
 
 // How many of |reading|'s checks fail, as |system| codes the packet: Hamming
 // 8/4 bytes that cannot be corrected (the MRAG and a header's control bytes,
