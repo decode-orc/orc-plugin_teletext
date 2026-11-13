@@ -23,6 +23,7 @@
 #include <map>
 #include <memory>
 #include <random>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -575,16 +576,21 @@ TEST_F(NabtsSinkPipelineTest, ExtraVisionCaptureAssemblesTheServicesRecords) {
   // would break a reassembler keying its groups on anything else. Both are
   // real: each follows its own continuity sequence (CI + 1 on 69% and 82% of
   // packets over the full recording; the phantom channels Hamming
-  // mis-correction invents follow 000's instead).
-  std::vector<uint16_t> channels;
+  // mis-correction invents follow 000's instead). The magazine is catalogued
+  // and the captioning kept apart as the caption service, so each list holds
+  // its own channel and nothing else.
+  std::set<uint16_t> record_channels;
   for (const auto& record : run.dataset.records) {
-    if (channels.empty() || channels.back() != record.channel) {
-      channels.push_back(record.channel);
-    }
+    record_channels.insert(record.channel);
   }
-  EXPECT_EQ(channels, (std::vector<uint16_t>{0x000, 0xA00}))
-      << "records interleaved across the service's two channels should "
-         "catalogue under exactly those two, in ascending order";
+  std::set<uint16_t> caption_channels;
+  for (const auto& record : run.dataset.captions) {
+    caption_channels.insert(record.channel);
+  }
+  EXPECT_EQ(record_channels, (std::set<uint16_t>{0x000}))
+      << "the magazine's records should catalogue under its channel alone";
+  EXPECT_EQ(caption_channels, (std::set<uint16_t>{0xA00}))
+      << "the captioning should be kept under its channel alone";
 
   // §6.1: a presentation record's data is NAPLPS, which is what Phase 5 reads.
   EXPECT_EQ(presentation_records, run.dataset.records.size())

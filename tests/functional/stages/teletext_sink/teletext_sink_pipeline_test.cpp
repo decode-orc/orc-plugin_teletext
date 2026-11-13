@@ -187,6 +187,19 @@ class FrameWindow final : public Artifact, public VideoFrameRepresentation {
 // the teletext sink it was reworked from had no equivalent of, so neither is
 // that sink's output; and that sink dropped 34-byte packets rather than
 // exporting them.
+//
+// Re-recorded on 2026-11-13 when decode-orc PR #328's teletext commit landed
+// here: its bit clock recovery, per-line MLSE refit and eye-margin fallback
+// recover 586 more packets in the 625-line window (4097 to 4683) and 243 more
+// in the 525-line one (2662 to 2905). The PR kept the references it started
+// from, which its own head no longer matched.
+//
+// The captures are read through decode-orc's VBI Source stage, built from the
+// decode-orc checkout the SDK comes from (tests/functional/CMakeLists.txt), so
+// the 625-line reference also depends on that stage. These are from decode-orc
+// main at db1b9264. PR #328's VBI source commit, once it lands there, moves the
+// 625-line stream to bd32b2d4942ed096c244029467b9216f9a07badd636f7bfd0d622810a1ba35b6
+// (196518 bytes, 4679 packets) and leaves the 525-line one as it is.
 struct StreamGolden {
   const char* sha256;
   uint64_t bytes;
@@ -199,8 +212,8 @@ constexpr FrameID kPalFirstFrame = 2000;
 constexpr uint64_t kPalFrameCount = 200;
 
 constexpr StreamGolden kPalGolden{
-    "1470fc74095ea0b35e1f9d36eaf66688b62a7e58cfad47eeaf4932b2fbfa638a", 172074,
-    4097};
+    "e80329b7da4771f8a833656ff003b7637a476c5c846e3c9c1bb251fa57de5510", 196686,
+    4683};
 
 // Pages this window of the capture carries, in the magazine + two hex digits a
 // viewer shows. A sample of the catalogue rather than all of it: the window
@@ -215,8 +228,8 @@ const std::vector<std::string> kPalExpectedPages{"100", "101", "199", "301",
 constexpr uint64_t kNtscFrameCount = 300;
 
 constexpr StreamGolden kNtscGolden{
-    "030c2c67cf0e37adcfa790e0780a7fbe3d274d81eac1f2d184e42272d383f996", 90508,
-    2662};
+    "0a9b3f4ab2b9ea31dcc2313c8279d72e1da72dc36aaaf1b51233b37c1babdeae", 98770,
+    2905};
 
 // As above, of the 52 pages this window holds. Page 100 is the service's front
 // page, so a decode that addresses packets correctly always finds it.
