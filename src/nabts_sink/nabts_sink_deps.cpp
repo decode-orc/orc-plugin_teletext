@@ -1024,7 +1024,10 @@ void NabtsSinkDeps::write_carried_files(const NabtsSinkOptions& options,
   }
   const std::filesystem::path root(result.output_path + ".mirror");
   for (const NabtsMirrorFile& file : mirror.files) {
-    const std::filesystem::path path = root / file.path;
+    // file.path has '/' between its parts; on Windows, appending it keeps
+    // them, so turn the whole path to the platform's separator.
+    std::filesystem::path path = root / file.path;
+    path.make_preferred();
     // A folder that cannot be made leaves the file to fail as it is written,
     // which is what reports it.
     (void)file_system_->make_directories(path.parent_path().string());

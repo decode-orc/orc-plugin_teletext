@@ -94,7 +94,10 @@ VbiExportWriter vbi_export_writer(IStageServices* services,
       ORC_LOG_WARN("Export: not writing {}: it is not inside the export", path);
       return false;
     }
-    const std::filesystem::path file = std::filesystem::path(root) / path;
+    // |path| has '/' between its parts; on Windows, appending it keeps
+    // them, so turn the whole path to the platform's separator.
+    std::filesystem::path file = std::filesystem::path(root) / path;
+    file.make_preferred();
     std::error_code error;
     std::filesystem::create_directories(file.parent_path(), error);
     if (error) {
