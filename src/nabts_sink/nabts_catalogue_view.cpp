@@ -1690,7 +1690,7 @@ bool resets_only(const NabtsCataloguedRecord& record) {
  */
 std::optional<StructuralRole> structural_role(
     const NabtsCataloguedRecord& record) {
-  constexpr uint8_t kNulWithParity = 0x80;
+  static constexpr uint8_t kNulWithParity = 0x80;
   if (!nabts_type_is_presentation(record.record_type) || !record.complete ||
       std::any_of(record.data_present.begin(), record.data_present.end(),
                   [](uint8_t present) { return present == 0; })) {
