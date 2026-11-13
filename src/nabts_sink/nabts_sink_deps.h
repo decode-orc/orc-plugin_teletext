@@ -15,12 +15,14 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "nabts_data_group.h"
 #include "nabts_datacast.h"
+#include "nabts_file_system.h"
 #include "nabts_record.h"
 #include "nabts_record_catalogue.h"
 #include "nabts_salvage.h"
@@ -74,14 +76,33 @@ std::optional<NabtsReferenceRecord> nabts_reference_record_file(
  */
 class NabtsSinkDeps : public INabtsSinkStageDeps {
  public:
-  explicit NabtsSinkDeps(IStageServices* stage_services)
-      : stage_services_(stage_services) {}
+  // |file_system| is what reference recordings are read from and export
+  // folders made in; the machine's own unless a test gives another.
+  explicit NabtsSinkDeps(
+      IStageServices* stage_services,
+      std::shared_ptr<const INabtsFileSystem> file_system =
+          nabts_local_file_system())
+      : stage_services_(stage_services), file_system_(std::move(file_system)) {}
 
   void init(TriggerProgressCallback progress_callback,
             std::atomic<bool>* cancel_requested) override;
 
   NabtsSinkResult analyse(const VideoFrameRepresentation* representation,
                           const NabtsSinkOptions& options) override;
+
+  // Parts of analyse() that touch the file system, public so a test can run
+  // each over an in-memory one.
+
+  // Write each file the datacasts carried beside the packet stream. Never
+  // fails the export.
+  void write_carried_files(const NabtsSinkOptions& options,
+                           NabtsSinkResult& result) const;
+
+  // Read the reference recordings options.reference_records names — packet
+  // streams, record files export_records wrote, or folders of either — into
+  // |result.dataset.references|. Never fails the export.
+  void load_references(const NabtsSinkOptions& options,
+                       NabtsSinkResult& result) const;
 
  private:
   // The run's diagnostic report: what was exported and how the recovery went.
@@ -108,10 +129,6 @@ class NabtsSinkDeps : public INabtsSinkStageDeps {
                        const std::vector<NabtsDatacastChannel>& datacasts,
                        NabtsSinkResult& result) const;
 
-  // Write each file the datacasts carried beside the packet stream. Never
-  // fails the export.
-  void write_carried_files(const NabtsSinkOptions& options,
-                           NabtsSinkResult& result) const;
 
   // Write the runs salvage placed nowhere as text beside the packet stream.
   // Never fails the export.
@@ -135,13 +152,9 @@ class NabtsSinkDeps : public INabtsSinkStageDeps {
   bool write_file(const std::string& path, const uint8_t* data, size_t size,
                   size_t buffer_bytes, const char* what) const;
 
-  // Read the reference recordings options.reference_records names — packet
-  // streams, record files export_records wrote, or folders of either — into
-  // |result.dataset.references|. Never fails the export.
-  void load_references(const NabtsSinkOptions& options,
-                       NabtsSinkResult& result) const;
 
   IStageServices* stage_services_{nullptr};
+  std::shared_ptr<const INabtsFileSystem> file_system_;
   TriggerProgressCallback progress_callback_;
   std::atomic<bool>* cancel_requested_{nullptr};
 };

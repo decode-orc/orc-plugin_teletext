@@ -64,6 +64,7 @@ orc_teletext_add_unit_tests(orc-teletext-unit-tests-nabts-sink
     stages/nabts_sink/naplps_render_grid_test.cpp
     stages/nabts_sink/nabts_scan_state_test.cpp
     stages/nabts_sink/nabts_block_scanner_test.cpp
+    stages/nabts_sink/nabts_sink_deps_test.cpp
 )
 
 orc_teletext_add_unit_tests(orc-teletext-unit-tests-teletext-sink

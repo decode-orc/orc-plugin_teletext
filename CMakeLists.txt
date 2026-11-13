@@ -84,6 +84,7 @@ set(ORC_TELETEXT_SINK_SOURCES
 set(ORC_NABTS_SINK_SOURCES
     src/nabts_sink/nabts_sink_stage.cpp
     src/nabts_sink/nabts_sink_deps.cpp
+    src/nabts_sink/nabts_file_system.cpp
     src/nabts_sink/nabts_frame_slicer.cpp
     src/nabts_sink/nabts_scan_state.cpp
     src/nabts_sink/nabts_block_scanner.cpp

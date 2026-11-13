@@ -17,13 +17,10 @@
 #include <array>
 #include <cctype>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -1028,8 +1025,9 @@ void NabtsSinkDeps::write_carried_files(const NabtsSinkOptions& options,
   const std::filesystem::path root(result.output_path + ".mirror");
   for (const NabtsMirrorFile& file : mirror.files) {
     const std::filesystem::path path = root / file.path;
-    std::error_code error;
-    std::filesystem::create_directories(path.parent_path(), error);
+    // A folder that cannot be made leaves the file to fail as it is written,
+    // which is what reports it.
+    (void)file_system_->make_directories(path.parent_path().string());
     if (write_file(path.string(), file.data.data(), file.data.size(),
                    kRecordBufferBytes, "mirror file")) {
       ++result.mirror_files_exported;
@@ -1077,8 +1075,7 @@ void NabtsSinkDeps::write_network_messages(const NabtsSinkOptions& options,
       messages,
       [this, &root](const std::string& path, const uint8_t* data, size_t size) {
         const fs::path file = root / path;
-        std::error_code ignored;
-        fs::create_directories(file.parent_path(), ignored);
+        (void)file_system_->make_directories(file.parent_path().string());
         return write_file(file.string(), data, size, kRecordBufferBytes,
                           "network message");
       },
@@ -1107,16 +1104,17 @@ void NabtsSinkDeps::load_references(const NabtsSinkOptions& options,
   std::vector<fs::path> streams;
   std::vector<fs::path> record_files;
   for (const std::string& entry : options.reference_records) {
-    std::error_code error;
     const fs::path path(entry);
-    if (fs::is_directory(path, error)) {
+    const INabtsFileSystem::Kind kind = file_system_->kind(entry);
+    if (kind == INabtsFileSystem::Kind::kDirectory) {
       std::vector<fs::path> found_streams;
       std::vector<fs::path> found_records;
-      for (const auto& file : fs::directory_iterator(path, error)) {
-        if (file.path().extension() == kStreamExtension) {
-          found_streams.push_back(file.path());
-        } else if (file.path().extension() == kRecordExtension) {
-          found_records.push_back(file.path());
+      for (const std::string& listed : file_system_->list(entry)) {
+        const fs::path file(listed);
+        if (file.extension() == kStreamExtension) {
+          found_streams.push_back(file);
+        } else if (file.extension() == kRecordExtension) {
+          found_records.push_back(file);
         }
       }
       std::sort(found_streams.begin(), found_streams.end());
@@ -1134,7 +1132,7 @@ void NabtsSinkDeps::load_references(const NabtsSinkOptions& options,
       }
       record_files.insert(record_files.end(), found_records.begin(),
                           found_records.end());
-    } else if (fs::is_regular_file(path, error)) {
+    } else if (kind == INabtsFileSystem::Kind::kFile) {
       (path.extension() == kRecordExtension ? record_files : streams)
           .push_back(path);
     } else {
@@ -1145,15 +1143,12 @@ void NabtsSinkDeps::load_references(const NabtsSinkOptions& options,
 
   // Never this run's own stream, nor the records it exported a moment ago,
   // whose bytes are drawn on anyway.
-  std::error_code own_error;
-  const fs::path own_path =
-      result.output_path.empty()
-          ? fs::path()
-          : fs::weakly_canonical(fs::path(result.output_path), own_error);
-  const auto own_stream = [&own_path, &own_error](const fs::path& stream) {
-    std::error_code error;
-    const fs::path path = fs::weakly_canonical(stream, error);
-    return !own_path.empty() && !own_error && !error && path == own_path;
+  const std::string own_path = result.output_path.empty()
+                                   ? std::string()
+                                   : file_system_->canonical(result.output_path);
+  const auto own_stream = [this, &own_path](const fs::path& stream) {
+    return !own_path.empty() &&
+           file_system_->canonical(stream.string()) == own_path;
   };
 
   for (const fs::path& path : streams) {
@@ -1163,15 +1158,15 @@ void NabtsSinkDeps::load_references(const NabtsSinkOptions& options,
     if (own_stream(path)) {
       continue;
     }
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
+    const std::optional<std::vector<uint8_t>> read =
+        file_system_->read(path.string());
+    if (!read) {
       ORC_LOG_WARN("NabtsSinkDeps: Could not read reference recording {}",
                    path.string());
       ++result.reference_paths_unreadable;
       continue;
     }
-    const std::vector<uint8_t> stream{std::istreambuf_iterator<char>(in),
-                                      std::istreambuf_iterator<char>()};
+    const std::vector<uint8_t>& stream = *read;
     // Named for the reader: a stream a run wrote as out.t33 is known by the
     // folder it is in.
     const std::string source = nabts_reference_source(
@@ -1218,8 +1213,9 @@ void NabtsSinkDeps::load_references(const NabtsSinkOptions& options,
     if (!name || own_stream(stream)) {
       continue;
     }
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
+    std::optional<std::vector<uint8_t>> read =
+        file_system_->read(path.string());
+    if (!read) {
       ORC_LOG_WARN("NabtsSinkDeps: Could not read reference record {}",
                    path.string());
       ++result.reference_paths_unreadable;
@@ -1227,8 +1223,7 @@ void NabtsSinkDeps::load_references(const NabtsSinkOptions& options,
     }
     std::optional<NabtsReferenceRecord> record = nabts_reference_record_file(
         path.parent_path().filename().string(), path.filename().string(),
-        std::vector<uint8_t>{std::istreambuf_iterator<char>(in),
-                             std::istreambuf_iterator<char>()});
+        std::move(*read));
     if (!record) {
       continue;  // An empty file: a record with no data is never exported.
     }
