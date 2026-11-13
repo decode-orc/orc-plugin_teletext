@@ -574,6 +574,28 @@ struct TeletextLineResult {
   uint64_t wide_bytes = 0;
 };
 
+// How many of |reading|'s checks fail, as |system| codes the packet: Hamming
+// 8/4 bytes that cannot be corrected (the MRAG and a header's control bytes,
+// the designation code of packets 26 to 28, a System C prefix), display bytes
+// that fail their odd parity (rows 0 to 25), a System C packet's data checks
+// (its bytes' parity and the longitudinal check), and every byte the slicer
+// put right from its parity (repaired_byte_mask). Only the first
+// |packet_bytes| bytes are counted. An invalid reading counts nothing.
+int teletext_reading_check_failures(const TeletextLineResult& reading,
+                                    TeletextSystem system,
+                                    size_t packet_bytes);
+
+// Whether TeletextDetector::kAuto replaces a valid threshold reading whose
+// eye was too closed to trust with the MLSE reading of the same line: only
+// where the MLSE reading is valid and fails no more checks
+// (teletext_reading_check_failures()) than the threshold reading, so a clean
+// threshold packet is never swapped for a worse one when the channel fit
+// goes wrong.
+bool teletext_auto_takes_mlse_retry(const TeletextLineResult& threshold,
+                                    const TeletextLineResult& retry,
+                                    TeletextSystem system,
+                                    size_t packet_bytes);
+
 // Slicer tuning options. The framing code and the addressing are not among
 // them: both are always held to the strictest reading (see TeletextSlicer).
 struct TeletextSlicerOptions {

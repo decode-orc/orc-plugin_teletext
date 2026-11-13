@@ -3124,3 +3124,78 @@ TEST(TeletextSlicerNabts, AVX2ReadsALineAsTheOtherFormsDo) {
 }  // namespace
 }  // namespace tests
 }  // namespace orc
+
+namespace orc {
+namespace {
+
+// A valid 625-line reading of row |row| of magazine 1 whose display bytes are
+// all SPACE (odd parity), with |bad_parity| of them made to fail it.
+TeletextLineResult wst_reading(int row, int bad_parity) {
+  TeletextLineResult reading;
+  reading.valid = true;
+  reading.bytes[0] = teletext_hamming84_encode(
+      static_cast<uint8_t>(1 | ((row & 0x01) << 3)));
+  reading.bytes[1] = teletext_hamming84_encode(static_cast<uint8_t>(row >> 1));
+  for (size_t i = 2; i < kTeletextPacketBytes; ++i) {
+    reading.bytes[i] = 0x20;
+  }
+  for (int i = 0; i < bad_parity; ++i) {
+    reading.bytes[10 + static_cast<size_t>(i)] = 0xA0;  // two ones: even
+  }
+  return reading;
+}
+
+}  // namespace
+
+TEST(TeletextAutoRetry, CountsTheChecksAReadingFails) {
+  EXPECT_EQ(teletext_reading_check_failures(
+                wst_reading(1, 0), TeletextSystem::kWst625,
+                kTeletextPacketBytes),
+            0);
+  EXPECT_EQ(teletext_reading_check_failures(
+                wst_reading(1, 3), TeletextSystem::kWst625,
+                kTeletextPacketBytes),
+            3);
+  // A byte put right from its parity failed it as it arrived.
+  TeletextLineResult repaired = wst_reading(1, 1);
+  repaired.repaired_byte_mask = uint64_t{1} << 20;
+  EXPECT_EQ(teletext_reading_check_failures(repaired, TeletextSystem::kWst625,
+                                            kTeletextPacketBytes),
+            2);
+  // A header's control bytes are Hamming coded: one that cannot be corrected
+  // fails, and its display bytes are judged by parity from byte 10 on.
+  TeletextLineResult header = wst_reading(0, 1);
+  for (size_t i = 2; i < 10; ++i) {
+    header.bytes[i] = teletext_hamming84_encode(0);
+  }
+  // Two bits out: detected, not corrected (EN 300 706 §8.2).
+  header.bytes[4] = static_cast<uint8_t>(teletext_hamming84_encode(0) ^ 0x03);
+  ASSERT_LT(teletext_hamming84_decode(header.bytes[4]), 0);
+  EXPECT_EQ(teletext_reading_check_failures(header, TeletextSystem::kWst625,
+                                            kTeletextPacketBytes),
+            2);
+  EXPECT_EQ(teletext_reading_check_failures(TeletextLineResult{},
+                                            TeletextSystem::kWst625,
+                                            kTeletextPacketBytes),
+            0);
+}
+
+// Automatic mode retries with MLSE a threshold reading whose eye was nearly
+// closed, but keeps the retry only where it fails no more checks: a clean
+// threshold packet is never replaced by a worse MLSE one.
+TEST(TeletextAutoRetry, KeepsTheRetryOnlyWhenItFailsNoMoreChecks) {
+  const auto takes = [](const TeletextLineResult& threshold,
+                        const TeletextLineResult& retry) {
+    return teletext_auto_takes_mlse_retry(
+        threshold, retry, TeletextSystem::kWst625, kTeletextPacketBytes);
+  };
+  EXPECT_FALSE(takes(wst_reading(1, 0), wst_reading(1, 2)))
+      << "a clean threshold reading must not give way to a worse retry";
+  EXPECT_TRUE(takes(wst_reading(1, 3), wst_reading(1, 1)));
+  EXPECT_TRUE(takes(wst_reading(1, 1), wst_reading(1, 1)))
+      << "as good, the retry is taken: its eye is not in doubt";
+  EXPECT_FALSE(takes(wst_reading(1, 3), TeletextLineResult{}))
+      << "an invalid retry is never taken";
+}
+
+}  // namespace orc

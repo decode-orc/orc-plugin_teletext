@@ -4152,6 +4152,80 @@ uint8_t teletext_hamming84_encode(uint8_t value) {
                               (p3 << 4) | (d3 << 5) | (p4 << 6) | (d4 << 7));
 }
 
+int teletext_reading_check_failures(const TeletextLineResult& reading,
+                                    TeletextSystem system,
+                                    size_t packet_bytes) {
+  if (!reading.valid) {
+    return 0;
+  }
+  const size_t count = std::min(packet_bytes, reading.bytes.size());
+  int failures = 0;
+  for (size_t i = 0; i < count; ++i) {
+    failures += ((reading.repaired_byte_mask >> i) & 1U) != 0 ? 1 : 0;
+  }
+  const auto hamming_failures = [&](size_t first, size_t last) {
+    int failed = 0;
+    for (size_t i = first; i < std::min(last, count); ++i) {
+      failed += teletext_hamming84_decode(reading.bytes[i]) < 0 ? 1 : 0;
+    }
+    return failed;
+  };
+  const auto parity_failures = [&](size_t first) {
+    int failed = 0;
+    for (size_t i = first; i < count; ++i) {
+      failed += odd_parity(reading.bytes[i]) ? 0 : 1;
+    }
+    return failed;
+  };
+
+  if (system == TeletextSystem::kNabts525) {
+    failures += hamming_failures(0, kNabtsPacketStructureByte + 1);
+    if (count == kNabtsPacketBytes) {
+      std::vector<uint8_t> bits(kNabtsPacketBytes * 8);
+      for (size_t n = 0; n < bits.size(); ++n) {
+        bits[n] = static_cast<uint8_t>((reading.bytes[n >> 3] >> (n & 7)) & 1);
+      }
+      failures += data_check_failures(bits);
+    }
+    return failures;
+  }
+
+  const int mrag_low = teletext_hamming84_decode(reading.bytes[0]);
+  const int mrag_high = teletext_hamming84_decode(reading.bytes[1]);
+  if (mrag_low < 0 || mrag_high < 0) {
+    // With no row to say how the rest is coded, its bytes are judged as a
+    // display row's.
+    return failures + (mrag_low < 0 ? 1 : 0) + (mrag_high < 0 ? 1 : 0) +
+           parity_failures(kMragBytes);
+  }
+  const int row = ((mrag_low >> 3) & 0x01) | ((mrag_high << 1) & 0x1E);
+  if (row == 0) {
+    return failures + hamming_failures(kMragBytes, kHeaderControlBytes) +
+           parity_failures(kHeaderControlBytes);
+  }
+  if (row <= kMlseLastParityCodedRow) {
+    return failures + parity_failures(kMragBytes);
+  }
+  if (row <= 28) {
+    return failures + hamming_failures(kMragBytes, kMragBytes + 1);
+  }
+  return failures;
+}
+
+bool teletext_auto_takes_mlse_retry(const TeletextLineResult& threshold,
+                                    const TeletextLineResult& retry,
+                                    TeletextSystem system,
+                                    size_t packet_bytes) {
+  if (!retry.valid) {
+    return false;
+  }
+  if (!threshold.valid) {
+    return true;
+  }
+  return teletext_reading_check_failures(retry, system, packet_bytes) <=
+         teletext_reading_check_failures(threshold, system, packet_bytes);
+}
+
 int teletext_hamming84_decode(uint8_t byte) {
   // ETSI EN 300 706 §8.2: Hamming 8/4 has minimum distance 4, so every byte
   // within Hamming distance 1 of a codeword decodes to that codeword (single
@@ -4489,7 +4563,8 @@ TeletextLineResult TeletextSlicer::slice(
         if (weakest < kAutoFallbackEyeMargin) {
           TeletextLineResult retry =
               slice_mlse(line, sample_count, nominal_amplitude, window);
-          if (retry.valid) {
+          if (teletext_auto_takes_mlse_retry(attempt, retry, options_.system,
+                                             packet_bytes_)) {
             return retry;
           }
         }
