@@ -1,13 +1,17 @@
 {
   description = "Decode-Orc teletext and NABTS stage plugin";
 
-  # Keep nixpkgs on the same release as the decode-orc flake
+  # Keep both nixpkgs inputs on the same releases as the decode-orc flake
   # (github:decode-orc/decode-orc). The host loads a plugin only when the
   # plugin's toolchain tag (compiler family, major version and C++ standard
   # library) equals its own, and a different nixpkgs release brings a
-  # different default compiler.
+  # different default compiler. On Linux the decode-orc flake builds from
+  # nixos-25.05, whose GCC 14 and Qt 6.9 match the released Flatpak
+  # (org.kde.Sdk//6.9), so a plugin built here also loads in the Flatpak.
+  # macOS and the source tools (clang-format, clang-tidy) come from 26.05.
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+    nixpkgs-linux.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
 
     # The decode-orc source tree, used only for its plugin SDK (orc/sdk).
@@ -22,10 +26,18 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, decode-orc }:
+  outputs = { self, nixpkgs, nixpkgs-linux, flake-utils, decode-orc }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        # Source tools: 26.05 on every platform.
+        toolPkgs = import nixpkgs { inherit system; };
+
+        # Everything compiled or linked: 25.05 on Linux (the Flatpak's
+        # toolchain), 26.05 on macOS.
+        pkgs =
+          if nixpkgs.lib.hasSuffix "-linux" system
+          then import nixpkgs-linux { inherit system; }
+          else toolPkgs;
 
         # The nixpkgs default stdenv, exactly as the decode-orc flake uses:
         # gcc + libstdc++ on Linux, clang + libc++ on macOS. Overriding the
@@ -90,7 +102,7 @@
             qt6.qtbase
 
             # Development tools.
-            clang-tools
+            toolPkgs.clang-tools
             ccache
             git
             python3
