@@ -14,6 +14,7 @@
 
 #include <QApplication>
 #include <QLabel>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -74,6 +75,42 @@ class FakeSession : public orc::view::IStageToolSession {
   void set_results_changed_handler(std::function<void()> handler) override {
     results_changed = std::move(handler);
   }
+
+  // The rest of the session, which the catalogue view does not use. Each
+  // answers as a host does for a tool that is neither a job nor an
+  // analysis: nothing to run, nothing stored.
+  std::shared_ptr<orc::view::IToolJob> run_job(
+      const std::string& /*verb*/, std::vector<uint8_t> /*payload*/,
+      orc::view::ToolProgressHandler /*on_progress*/,
+      orc::view::ToolReplyHandler /*on_reply*/) override {
+    return nullptr;
+  }
+  void apply_parameters(orc::view::ToolParameterMap /*values*/,
+                        const std::string& /*label*/,
+                        orc::view::ToolReplyHandler /*on_done*/) override {}
+  void show_frame(uint64_t /*frame_index*/) override {}
+  void set_preview_frame_handler(
+      std::function<void(uint64_t)> /*handler*/) override {}
+  void render_frame(uint64_t /*frame_index*/,
+                    const orc::view::ToolFrameRenderOptions& /*options*/,
+                    orc::view::ToolFrameHandler /*on_image*/) override {}
+  void set_graph_rebuilt_handler(std::function<void()> /*handler*/) override {}
+  orc::view::AmplitudeUnit amplitude_unit() const override { return {}; }
+  void set_amplitude_unit_handler(
+      std::function<void(orc::view::AmplitudeUnit)> /*handler*/) override {}
+  orc::view::ToolParameterMap parameters() const override { return {}; }
+  std::string project_directory() const override { return {}; }
+  orc::view::ToolAnalysisInfo analysis_info() const override { return {}; }
+  std::shared_ptr<orc::view::IToolJob> run_analysis(
+      orc::view::ToolParameterMap /*parameters*/,
+      orc::view::ToolProgressHandler /*on_progress*/,
+      orc::view::ToolAnalysisHandler /*on_report*/) override {
+    return nullptr;
+  }
+  orc::view::ToolRefreshState refresh_state() const override { return {}; }
+  void set_refresh(bool /*use_this_tool*/,
+                   orc::view::ToolParameterMap /*parameters*/,
+                   orc::view::ToolReplyHandler /*on_done*/) override {}
 
   void answer(size_t index, const orc::CatalogueDataset& dataset) {
     orc::view::ToolReply reply;

@@ -15,13 +15,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       ORC_SDK_DIR: ${{ github.workspace }}/decode-orc
-      # Host SDK the plugin is built against. Tracks `main` (host ABI 20).
+      # Host SDK the plugin is built against. Tracks `main` (host ABI 21).
       # Pin to a branch or tag only for a deliberate, temporary reason, and
       # restore `main` once it merges.
-      # issue-377 until it merges: the functional goldens are recorded
-      # against its VBI Source stage (decode-orc#328's, cherry-picked there),
-      # and the view SDK tier (orc/view/) is only there.
-      ORC_SDK_REF: issue-377
+      # issue-382 until it merges: its view session has members (run_job()
+      # onwards) the view's test fake must implement, which main lacks.
+      ORC_SDK_REF: issue-382
     strategy:
       fail-fast: false
       matrix:

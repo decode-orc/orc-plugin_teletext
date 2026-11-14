@@ -18,10 +18,11 @@
     # Not imported as a flake: the plugin needs the SDK sources, not the
     # host's packages or dev-shell inputs. Move the pin with
     #   nix flake update decode-orc
-    # Temporarily the issue-377 branch: the view SDK tier (orc/view/) is not
-    # on main yet. Restore the plain URL (main) once issue-377 merges.
+    # Temporarily the issue-382 branch: the view session members the tests'
+    # fake implements are not on main yet. Restore the plain URL (main) once
+    # issue-382 merges.
     decode-orc = {
-      url = "github:decode-orc/decode-orc/issue-377";
+      url = "github:decode-orc/decode-orc/issue-382";
       flake = false;
     };
   };

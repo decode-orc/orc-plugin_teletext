@@ -7,8 +7,8 @@
 #
 #   orc-sdk-support  STATIC library of the support-tier helpers
 #                    (<orc/support/logging.h>, scratch_file.h,
-#                    preview_helpers.h, ...), compiled from
-#                    <checkout>/orc/sdk/src/*.cpp.
+#                    preview_helpers.h, observers/, ...), compiled from
+#                    every .cpp under <checkout>/orc/sdk/src.
 #   orc-plugin-sdk   INTERFACE target: the SDK include directory, spdlog/fmt,
 #                    and orc-sdk-support.
 #
@@ -39,7 +39,8 @@ endif()
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 
-file(GLOB _orc_sdk_support_sources CONFIGURE_DEPENDS "${_orc_sdk_root}/src/*.cpp")
+# Recursive: the observers live in src/observers/.
+file(GLOB_RECURSE _orc_sdk_support_sources CONFIGURE_DEPENDS "${_orc_sdk_root}/src/*.cpp")
 if(NOT _orc_sdk_support_sources)
     message(FATAL_ERROR "No SDK support sources found under ${_orc_sdk_root}/src")
 endif()
