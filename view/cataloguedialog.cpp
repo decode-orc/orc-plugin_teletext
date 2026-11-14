@@ -1,7 +1,7 @@
 /*
  * File:        cataloguedialog.cpp
- * Module:      orc-gui
- * Purpose:     Generic browser for any stage that exposes ICatalogueResults
+ * Module:      orc-view_teletext
+ * Purpose:     Browser for the catalogue a teletext plugin stage produced
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  * SPDX-FileCopyrightText: 2026 Simon Inns

@@ -13,10 +13,11 @@
 
 // Plugin-private, not part of any SDK. These types began as decode-orc's
 // <orc/stage/tooling/catalogue_results.h> (the host's generic catalogue
-// browser). The browser moved into this plugin's view binary (decode-orc issue
-// #377), so the stage and the view now share these types between themselves,
-// and only bytes cross the host (catalogue_wire.h). A change here therefore
-// bumps nothing in decode-orc; it changes kCatalogueWireVersion instead.
+// browser, removed at host ABI 21). The browser moved into this plugin's view
+// binary (decode-orc issue #377), so the stage and the view now share these
+// types between themselves, and only bytes cross the host (catalogue_wire.h). A
+// change here therefore bumps nothing in decode-orc; it changes
+// kCatalogueWireVersion instead.
 //
 // The inline namespace keeps these apart from the host's types of the same
 // name while decode-orc still has them: same spelling in source, different

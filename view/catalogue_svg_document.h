@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_svg_document.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     A display list as an SVG document, its presentation as SMIL
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

@@ -1,6 +1,6 @@
 /*
  * File:        cataloguecellgridwidget.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Widget painting a CataloguePayload character-cell grid
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

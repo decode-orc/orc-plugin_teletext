@@ -1,7 +1,7 @@
 /*
  * File:        cataloguedialog.h
- * Module:      orc-gui
- * Purpose:     Generic browser for any stage that exposes ICatalogueResults
+ * Module:      orc-view_teletext
+ * Purpose:     Browser for the catalogue a teletext plugin stage produced
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  * SPDX-FileCopyrightText: 2026 Simon Inns
@@ -45,11 +45,11 @@ class ICatalogueAnimationClock;
 /**
  * @brief Browser for the catalogue a stage produced from one trigger run
  *
- * The stage tool of any node whose stage advertises
- * StageToolKind::CatalogueBrowser: triggering the node decodes the whole frame
- * range in a single pass and this dialogue shows what it found. It does not
- * follow the previewer — a catalogue describes the entire source, so there is
- * no window to slide and nothing to accumulate here.
+ * The window for the plugin's catalogue view contract
+ * (teletext_wire::kCatalogueViewContractId): triggering the node decodes the
+ * whole frame range in a single pass and this dialogue shows what it found. It
+ * does not follow the previewer — a catalogue describes the entire source, so
+ * there is no window to slide and nothing to accumulate here.
  *
  * The catalogue is a table of items on the left and the selected item's payload
  * on the right. What the columns are called, what one item is called, whether
@@ -127,7 +127,7 @@ class CatalogueDialog : public QDialog {
   /// (orc::CatalogueItem::keys): |keys| is every key pressed on |item_id|
   /// since it was shown, in order. The dialogue cannot play the item itself,
   /// so the owner asks the stage what they show
-  /// (orc::ICatalogueResults::played()) under the presentation on show,
+  /// (teletext_wire::kPlayedVerb) under the presentation on show,
   /// |option_id| and |active_toggles|, and delivers the answer back through
   /// setPlayedPayload(). Emitted again, with the same keys, when the reader
   /// changes the presentation, so a game in progress is redrawn the new way.
@@ -136,7 +136,7 @@ class CatalogueDialog : public QDialog {
 
   /// The reader exported everything: the dialogue has written what it shows,
   /// and the owner asks the stage to write what it decoded under
-  /// |directory| (orc::ICatalogueResults::export_data()), which the stage
+  /// |directory| (teletext_wire::kExportVerb), which the stage
   /// owns, and delivers the answer back through finishExport().
   void exportDataRequested(const QString& directory);
 

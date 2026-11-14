@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_display_list_canvas.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Where a display list's fills go: a painter, or a document
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

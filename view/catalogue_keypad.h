@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_keypad.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     The keypad a catalogue item that takes keys is played on, and
  *              page numbers are typed on
  *

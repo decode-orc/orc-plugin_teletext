@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_stroke_geometry.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Logical-pel stroking for the display-list renderer: the pel as a
  *              corner-anchored rectangle, the region it sweeps, line textures
  *              in whole pels or registered to the receiver's grid, and arcs as

@@ -1,6 +1,6 @@
 /*
  * File:        cataloguedisplaylistwidget.cpp
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Widget rasterising a CataloguePayload 2D display list
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

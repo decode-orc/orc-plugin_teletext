@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_playback_bar.cpp
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Transport controls for a timed display list: play and pause,
  *              step, seek, speed and loop
  *

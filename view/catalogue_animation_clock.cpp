@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_animation_clock.cpp
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Time source a catalogue view plays a timed payload against
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

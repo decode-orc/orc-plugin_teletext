@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_playback.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Where the presentation of a timed display list stands as a
  *              reader plays, pauses, seeks, speeds up and loops it
  *

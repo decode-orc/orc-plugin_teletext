@@ -60,9 +60,9 @@ record decoding). Both stages moved here from decode-orc core (issue #377);
   `StageToolKind::PluginView` tool under
   `teletext_wire::kCatalogueViewContractId` and answer the view through
   `IStageToolRequestHandler`; the catalogue crosses as bytes
-  (`src/catalogue/catalogue_wire.h`). Never use decode-orc's
-  `<orc/stage/tooling/catalogue_results.h>` or `CatalogueBrowser`: the host
-  browser is being removed (issue #377 Phase 7).
+  (`src/catalogue/catalogue_wire.h`). decode-orc's own catalogue contract
+  (`catalogue_results.h`, `StageToolKind::CatalogueBrowser`) was removed at
+  host ABI 21; do not bring an equivalent back into the SDK.
 - `src/catalogue/` is shared by the stage and the view and depends on neither
   the SDK nor Qt. Change a field there and you must change
   `catalogue_wire.cpp` and bump `kCatalogueWireVersion`; the round-trip test

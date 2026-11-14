@@ -23,7 +23,7 @@ See [`docs/teletext-sink.md`](docs/teletext-sink.md) and
 parameter it takes — the same text the GUI's Help dialog shows via each
 stage's `instructions.md`.
 
-## SDK Contract (Decode-Orc 2.x — host ABI 20 / plugin API 4)
+## SDK Contract (Decode-Orc 2.x — host ABI 21 / plugin API 4)
 
 - Include only the public SDK umbrella header in plugin/stage code:
 
@@ -204,9 +204,9 @@ cmake --build build --parallel
 Release assets and local packaging output follow
 `orc-plugin_<name>_<platform>[_abi<N>].<ext>`:
 
-- `orc-plugin_teletext_linux_abi20.so`
-- `orc-plugin_teletext_macos_abi20.dylib`
-- `orc-plugin_teletext_windows_abi20.dll`
+- `orc-plugin_teletext_linux_abi21.so`
+- `orc-plugin_teletext_macos_abi21.dylib`
+- `orc-plugin_teletext_windows_abi21.dll`
 
 The name token is `teletext` (the plugin), not a stage name — this binary
 registers two stages. The `_abi<N>` token records the host ABI the binary
@@ -223,14 +223,21 @@ entirely from the manifest, and refuses anything whose declared ABI or
 toolchain tag cannot work.
 
 ```yaml
-manifest_schema: 1
+manifest_schema: 2
 plugin_id: org.decodeorc.stage.teletext
-plugin_version: 1.0.0
+plugin_version: 1.1.0
 artifacts:
-  - file: orc-plugin_teletext_linux_abi20.so
+  - file: orc-plugin_teletext_linux_abi21.so
     platform: linux
-    abi: 20
-    toolchain_tag: gcc15/libstdc++
+    abi: 21
+    toolchain_tag: gcc14/libstdc++
+    sha256: <digest>
+  - file: orc-view_teletext_linux_view1.so
+    kind: view
+    platform: linux
+    abi: 1
+    qt: "6.9"
+    toolchain_tag: gcc14/libstdc++
     sha256: <digest>
 ```
 
@@ -260,7 +267,7 @@ binary:
     per-platform manifest fragments, then publishes the artifacts and
     `orc-plugin-manifest.yaml` to GitHub Release assets.
 - `ORC_SDK_REF` in the workflow selects the decode-orc checkout the SDK comes
-  from. It normally tracks `main` (host ABI 20); pin it to a branch or tag only
+  from. It normally tracks `main` (host ABI 21); pin it to a branch or tag only
   for a deliberate, temporary reason, and return it to `main` once that branch
   merges. It is on `issue-377` now: the functional goldens are recorded
   against that branch's VBI Source stage.
@@ -307,3 +314,11 @@ and 10x20 members of the X11 "misc-fixed" bitmap font family (X.Org
 The tables are generated from the upstream release's BDF sources by
 `src/nabts_sink/tools/generate_naplps_font.py`, which documents where to get
 them.
+
+The catalogue view draws teletext pages from the character bitmaps of the
+Mullard SAA5050 series of teletext character generators, from the Bedstead
+project (<http://bjh21.me.uk/bedstead/>, mirrored as
+[Teletext50](https://github.com/glxxyz/bedstead)). They were dedicated to the
+public domain under CC0 1.0 by Ben Harris, Simon Tatham and Marnanel Thurman.
+The table is generated from the upstream `bedstead.c` by
+`view/tools/generate_teletext_font.py`.

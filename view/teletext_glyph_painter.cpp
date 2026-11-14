@@ -1,6 +1,6 @@
 /*
  * File:        teletext_glyph_painter.cpp
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     SAA5050 character rounding, and the shape it makes of a glyph
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

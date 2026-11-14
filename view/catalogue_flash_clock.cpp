@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_flash_clock.cpp
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Shared flash phase for the catalogue character-grid view
  *
  * SPDX-License-Identifier: GPL-3.0-or-later

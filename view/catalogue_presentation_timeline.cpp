@@ -1,6 +1,6 @@
 /*
  * File:        catalogue_presentation_timeline.cpp
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     Reads the timing a catalogue display list carries: which
  *              operations are drawn and what each palette entry holds at a
  *              moment of the presentation, and when that next changes

@@ -158,7 +158,7 @@ struct NabtsSinkResult {
   uint64_t reference_streams{0};
   uint64_t reference_paths_unreadable{0};
   // Every record the range carried, which the stage resolves into the
-  // catalogue the host browses through ICatalogueResults.
+  // catalogue the view binary browses.
   NabtsAnalysisDataset dataset;
   // What lint-directed repair made of the presentation records, for the
   // report. Aggregate only; the per-page detail rides on each page.

@@ -1,6 +1,6 @@
 /*
  * File:        teletext_font.h
- * Module:      orc-gui
+ * Module:      orc-view_teletext
  * Purpose:     The SAA5050 character generator's bitmaps, keyed by Unicode
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
