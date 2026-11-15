@@ -269,8 +269,7 @@ binary:
 - `ORC_SDK_REF` in the workflow selects the decode-orc checkout the SDK comes
   from. It normally tracks `main` (host ABI 21); pin it to a branch or tag only
   for a deliberate, temporary reason, and return it to `main` once that branch
-  merges. It is on `issue-382` now: the view's test fake implements view
-  session members only that branch has.
+  merges.
 
 - Release binaries must carry the toolchain tag of the release `orc-gui`
   they are for. The Flatpak `orc-gui` is built with GCC 14 in

@@ -18,9 +18,7 @@ jobs:
       # Host SDK the plugin is built against. Tracks `main` (host ABI 21).
       # Pin to a branch or tag only for a deliberate, temporary reason, and
       # restore `main` once it merges.
-      # issue-382 until it merges: its view session has members (run_job()
-      # onwards) the view's test fake must implement, which main lacks.
-      ORC_SDK_REF: issue-382
+      ORC_SDK_REF: main
     strategy:
       fail-fast: false
       matrix:
