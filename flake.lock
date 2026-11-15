@@ -4,7 +4,7 @@
       "flake": false,
       "locked": {
         "lastModified": 1794688982,
-        "narHash": "sha256-3QnccBLhT690m82xsf8CnL9qQEt4KH0MZuPFmm9G3ig=",
+        "narHash": "sha256-8PcxVvovlVqo5lSQ3M1U3BGyHv3dJSQyL41I0cMysV0=",
         "owner": "decode-orc",
         "repo": "decode-orc",
         "rev": "0c114181ef29dae00980d23ab8bfe424a7e67e05",
