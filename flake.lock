@@ -3,11 +3,11 @@
     "decode-orc": {
       "flake": false,
       "locked": {
-        "lastModified": 1794688982,
-        "narHash": "sha256-8PcxVvovlVqo5lSQ3M1U3BGyHv3dJSQyL41I0cMysV0=",
+        "lastModified": 1794817498,
+        "narHash": "sha256-/3ckNWbaqdkln6cbh45HKitSaBLLs1MsA0Fbl+0Hbe8=",
         "owner": "decode-orc",
         "repo": "decode-orc",
-        "rev": "0c114181ef29dae00980d23ab8bfe424a7e67e05",
+        "rev": "270de6f605da6580a2064d22153ca5b204d0f1df",
         "type": "github"
       },
       "original": {
