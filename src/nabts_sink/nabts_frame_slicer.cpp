@@ -93,10 +93,11 @@ NabtsFrameSlicer::SystemProfile NabtsFrameSlicer::profile_for(
                            static_cast<int16_t>(kNtscBlack),
                            static_cast<int16_t>(kNtscWhite),
                            1};
-    // PAL is 625 lines, and CEA-516 §1.1.1 specifies NABTS on the 525-line
-    // signal, so there is no System C service there to recover; an unknown
-    // system is not claimed to carry one either.
+    // PAL and SECAM are 625 lines, and CEA-516 §1.1.1 specifies NABTS on the
+    // 525-line signal, so there is no System C service there to recover; an
+    // unknown system is not claimed to carry one either.
     case VideoSystem::PAL:
+    case VideoSystem::SECAM:
     case VideoSystem::Unknown:
       break;
   }

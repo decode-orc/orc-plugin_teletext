@@ -54,7 +54,10 @@ TeletextFrameSlicer::SystemProfile TeletextFrameSlicer::profile_for(
     VideoSystem system) {
   switch (system) {
     case VideoSystem::PAL:
-      // 625 lines: ETSI EN 300 706.
+    case VideoSystem::SECAM:
+      // 625 lines: ETSI EN 300 706. SECAM has PAL's line timing, 4FSC sample
+      // rate and levels (CVBS File Format Specification v1.8.1, Preset SECAM),
+      // so it carries the same service and shares PAL's slicer.
       return SystemProfile{true,
                            TeletextSystem::kWst625,
                            kTeletextFirstFieldLine625,

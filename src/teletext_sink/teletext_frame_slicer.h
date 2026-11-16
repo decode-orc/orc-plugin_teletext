@@ -103,7 +103,8 @@ inline constexpr std::array<VideoSystem, 3> kTeletextVideoSystems = {
  * enough to build once here rather than per frame — and selects between them
  * from the representation's video parameters.
  *
- * System B only: 625 lines per ETSI EN 300 706 (PAL) and 525 per ITU-R BT.653
+ * System B only: 625 lines per ETSI EN 300 706 (PAL, and SECAM, which shares
+ * PAL's slicer) and 525 per ITU-R BT.653
  * Table 1b (NTSC and PAL_M). NABTS, the other BT.653 service carried on the
  * same 525-line VBI lines, is recovered by the nabts_sink stage, which has its
  * own copy of this pass — see docs-tech/nabts-support-design.md §2 for why the

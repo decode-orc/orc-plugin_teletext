@@ -103,6 +103,7 @@ TEST_F(NabtsFrameSlicer, AppliesTo_CoversThe525LineSystemsOnly) {
   EXPECT_TRUE(orc::NabtsFrameSlicer::applies_to(orc::VideoSystem::NTSC));
   EXPECT_TRUE(orc::NabtsFrameSlicer::applies_to(orc::VideoSystem::PAL_M));
   EXPECT_FALSE(orc::NabtsFrameSlicer::applies_to(orc::VideoSystem::PAL));
+  EXPECT_FALSE(orc::NabtsFrameSlicer::applies_to(orc::VideoSystem::SECAM));
   EXPECT_FALSE(orc::NabtsFrameSlicer::applies_to(orc::VideoSystem::Unknown));
 }
 

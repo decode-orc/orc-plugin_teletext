@@ -106,12 +106,13 @@ class TeletextFrameSlicer : public ::testing::Test {
 
 ////////////////////////////////////////////////////////////////////////////////////////////
 
-// ITU-R BT.653 System B is defined on 625 lines (ETSI EN 300 706) and on 525
-// (Table 1b); a source of unknown system carries neither.
+// ITU-R BT.653 System B is defined on 625 lines (ETSI EN 300 706 — PAL and
+// SECAM) and on 525 (Table 1b); a source of unknown system carries neither.
 TEST_F(TeletextFrameSlicer, AppliesTo_CoversBothSystemBTelevisionSystems) {
   EXPECT_TRUE(orc::TeletextFrameSlicer::applies_to(orc::VideoSystem::PAL));
   EXPECT_TRUE(orc::TeletextFrameSlicer::applies_to(orc::VideoSystem::NTSC));
   EXPECT_TRUE(orc::TeletextFrameSlicer::applies_to(orc::VideoSystem::PAL_M));
+  EXPECT_TRUE(orc::TeletextFrameSlicer::applies_to(orc::VideoSystem::SECAM));
   EXPECT_FALSE(orc::TeletextFrameSlicer::applies_to(orc::VideoSystem::Unknown));
 }
 
@@ -120,6 +121,17 @@ TEST_F(TeletextFrameSlicer, ProfileFor_SelectsTheSystemsServiceAndWindow) {
   EXPECT_EQ(pal.teletext_system, orc::TeletextSystem::kWst625);
   EXPECT_EQ(pal.first_field_line, orc::kTeletextFirstFieldLine625);
   EXPECT_EQ(pal.last_field_line, orc::kTeletextLastFieldLine625);
+
+  // SECAM has PAL's line timing, sample rate and levels, so it is PAL's
+  // service on PAL's slicer.
+  const auto secam =
+      orc::TeletextFrameSlicer::profile_for(orc::VideoSystem::SECAM);
+  EXPECT_TRUE(secam.carries_teletext);
+  EXPECT_EQ(secam.teletext_system, orc::TeletextSystem::kWst625);
+  EXPECT_EQ(secam.first_field_line, pal.first_field_line);
+  EXPECT_EQ(secam.last_field_line, pal.last_field_line);
+  EXPECT_EQ(secam.sample_rate, pal.sample_rate);
+  EXPECT_EQ(secam.slicer_index, pal.slicer_index);
 
   // NTSC and PAL_M share the 525-line structure and therefore the service.
   for (const auto system : {orc::VideoSystem::NTSC, orc::VideoSystem::PAL_M}) {
