@@ -57,6 +57,12 @@ set_target_properties(${ORC_TELETEXT_VIEW_TARGET} PROPERTIES
     VISIBILITY_INLINES_HIDDEN ON
     LIBRARY_OUTPUT_DIRECTORY "${_orc_teletext_plugin_dir}"
     RUNTIME_OUTPUT_DIRECTORY "${_orc_teletext_plugin_dir}")
+# Keeps any spdlog/fmt the view picks up from the SDK to itself, as
+# orc_add_stage_plugin() does for the stage binary. A no-op when decode-orc
+# builds this repository as a bundled plugin.
+if(COMMAND orc_sdk_hide_private_logging_symbols)
+    orc_sdk_hide_private_logging_symbols(${ORC_TELETEXT_VIEW_TARGET})
+endif()
 install(TARGETS ${ORC_TELETEXT_VIEW_TARGET}
     LIBRARY DESTINATION "${ORC_STAGE_PLUGIN_INSTALL_DIR}" COMPONENT Runtime
     RUNTIME DESTINATION "${ORC_STAGE_PLUGIN_INSTALL_DIR}" COMPONENT Runtime)

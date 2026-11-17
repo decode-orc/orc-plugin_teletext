@@ -9,8 +9,14 @@
 #                    (<orc/support/logging.h>, scratch_file.h,
 #                    preview_helpers.h, observers/, ...), compiled from
 #                    every .cpp under <checkout>/orc/sdk/src.
-#   orc-plugin-sdk   INTERFACE target: the SDK include directory, spdlog/fmt,
-#                    and orc-sdk-support.
+#   orc-plugin-sdk   INTERFACE target: the SDK include directory and
+#                    orc-sdk-support.
+#
+# Both are built with private logging (orc_sdk_enable_private_logging() in
+# DecodeOrcPluginSDKHelpers.cmake, which must be included first): spdlog and
+# fmt are compiled in header-only, so the plugin links no spdlog or fmt
+# library and loads whatever versions orc-gui was built with (decode-orc issue
+# #391). Its ORC_LOG_* records reach the host through OrcPluginServices::log.
 #
 # Only the SDK tree is used. No decode-orc host library is built or linked,
 # so a plugin built this way has the same link surface as one built against
@@ -38,6 +44,11 @@ endif()
 
 find_package(fmt CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+if(NOT COMMAND orc_sdk_enable_private_logging)
+    message(FATAL_ERROR
+        "DecodeOrcInTreeSDK.cmake needs DecodeOrcPluginSDKHelpers.cmake included first")
+endif()
+orc_sdk_enable_private_logging()
 
 # Recursive: the observers live in src/observers/.
 file(GLOB_RECURSE _orc_sdk_support_sources CONFIGURE_DEPENDS "${_orc_sdk_root}/src/*.cpp")
@@ -53,7 +64,7 @@ target_compile_definitions(orc-sdk-support PRIVATE
     $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG>
     $<$<NOT:$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
 )
-target_link_libraries(orc-sdk-support PUBLIC spdlog::spdlog fmt::fmt)
+target_link_libraries(orc-sdk-support PUBLIC orc-sdk-private-logging)
 # decode-orc compiles everything with these on Windows, and the SDK headers
 # rely on them: NOMINMAX keeps windows.h's min()/max() macros from breaking
 # std::min/std::max and std::numeric_limits<T>::max(), and _USE_MATH_DEFINES
@@ -67,4 +78,4 @@ target_include_directories(orc-plugin-sdk INTERFACE "${_orc_sdk_root}/include")
 # Bundled plugins build without the pre-tier include shims; do the same so a
 # plugin that still uses a pre-tier path fails here rather than in decode-orc.
 target_compile_definitions(orc-plugin-sdk INTERFACE ORC_SDK_NO_DEPRECATED_INCLUDE_SHIMS)
-target_link_libraries(orc-plugin-sdk INTERFACE orc-sdk-support spdlog::spdlog fmt::fmt)
+target_link_libraries(orc-plugin-sdk INTERFACE orc-sdk-support)

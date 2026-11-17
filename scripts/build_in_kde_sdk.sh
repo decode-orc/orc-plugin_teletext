@@ -35,7 +35,9 @@ mkdir -p "$build_dir"
 build_dir="$(cd "$build_dir" && pwd)"
 kde_sdk_version="${ORC_KDE_SDK_VERSION:-6.9}"
 
-# Kept identical to the fmt and spdlog modules of decode-orc's Flatpak.
+# The fmt and spdlog modules of decode-orc's Flatpak. Only their headers end up
+# in the plugin (it carries a private header-only copy and links neither), so
+# matching the Flatpak is tidiness rather than a load requirement.
 fmt_url="https://github.com/fmtlib/fmt/archive/refs/tags/10.2.1.tar.gz"
 fmt_sha256="1250e4cc58bf06ee631567523f48848dc4596133e163f02615c97f78bab6c811"
 spdlog_url="https://github.com/gabime/spdlog/archive/refs/tags/v1.14.1.tar.gz"

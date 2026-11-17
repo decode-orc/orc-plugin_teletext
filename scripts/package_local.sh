@@ -106,6 +106,9 @@ fi
 
 cp "$candidate" "$output_dir/$plugin_name"
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "$script_dir/check_release_dependencies.sh" stage "$output_dir/$plugin_name"
+
 # --- Digest ---------------------------------------------------------------
 
 digest() {
@@ -137,6 +140,7 @@ if [[ -n "$view_abi" ]]; then
     fi
     view_name="orc-view_${stage_name}_${platform}_view${view_abi}.${ext}"
     cp "$view_candidate" "$output_dir/$view_name"
+    bash "$script_dir/check_release_dependencies.sh" view "$output_dir/$view_name"
     view_sha256="$(digest "$output_dir/$view_name")"
 fi
 
